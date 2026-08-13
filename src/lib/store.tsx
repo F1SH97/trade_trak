@@ -59,8 +59,12 @@ function loadInitial(): { portfolio: Portfolio | null; isSample: boolean } {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(() => loadInitial())
   const [creditLimit, setCreditLimitState] = useState<number | null>(() => {
-    const raw = localStorage.getItem(CREDIT_LIMIT_KEY)
-    return raw != null ? Number(raw) : null
+    try {
+      const raw = localStorage.getItem(CREDIT_LIMIT_KEY)
+      return raw != null ? Number(raw) : null
+    } catch {
+      return null
+    }
   })
 
   useEffect(() => {
