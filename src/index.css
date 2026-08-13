@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ *
+ * Design tokens.  Semantic surface / text / border tokens flip between
+ * light and dark; the data-viz palette lives in src/theme.ts so charts
+ * can read the same hues in JS.
+ * ------------------------------------------------------------------ */
+:root {
+  color-scheme: light;
+  --surface-0: #eef1f4; /* app background / sunken */
+  --surface-1: #ffffff; /* card surface */
+  --surface-2: #f7f9fb; /* raised / subtle fill */
+  --border: #e3e8ee;
+  --text-primary: #16222c;
+  --text-secondary: #52616f;
+  --text-muted: #8794a1;
+  --grid: #eef2f6;
+}
+
+html.dark {
+  color-scheme: dark;
+  --surface-0: #101820;
+  --surface-1: #182430;
+  --surface-2: #1f2e3b;
+  --border: #2c3d4c;
+  --text-primary: #eef3f7;
+  --text-secondary: #a9b8c4;
+  --text-muted: #748896;
+  --grid: #24333f;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'tnum' 1, 'cv01' 1;
+}
+
+/* Tabular numbers everywhere financial figures appear. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Thin, unobtrusive scrollbars for the table panes. */
+.scroll-thin::-webkit-scrollbar {
+  height: 9px;
+  width: 9px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Recharts: keep focus outlines off the SVG surfaces. */
+.recharts-wrapper:focus,
+.recharts-surface:focus {
+  outline: none;
+}
+
+@keyframes tt-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade {
+  animation: tt-fade 0.28s ease-out both;
+}
