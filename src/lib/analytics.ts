@@ -75,7 +75,12 @@ export function computeKpis(p: Portfolio): Kpis {
     }
   }
 
-  const months = p.monthly.filter((m) => m.protection > 0 || m.maxObligation > 0)
+  // Distinct expiry months with cover — derived from trades, not the workbook's
+  // monthly block (which can arrive mis-dated on some exports).
+  const coverMonths = new Set<number>()
+  for (const t of p.trades) {
+    if (t.protection > 0 || t.maxObligation > 0) coverMonths.add(new Date(t.expiry.getFullYear(), t.expiry.getMonth(), 1).getTime())
+  }
   return {
     totalProtection: protection,
     currentObligation: current,
@@ -85,7 +90,7 @@ export function computeKpis(p: Portfolio): Kpis {
     weightedRate: weightedDen ? weightedNum / weightedDen : null,
     tradeCount: p.trades.length,
     activeTrades: active,
-    coverageMonths: months.length,
+    coverageMonths: coverMonths.size,
     pair: p.pair,
   }
 }
@@ -259,31 +264,56 @@ function triggerNote(
 /**
  * Protection & obligation timeline for the overview area chart.
  *
- * The chart looks forward from the first live expiry: leading months with no
- * cover — and any month in the past — are dropped, and trailing all-zero
- * months are trimmed (keeping one month of padding). Hedges cannot sit in the
- * past, so a spuriously-dated early row never drags the axis backwards.
+ * Derived straight from the trades (bucketed by expiry month) rather than the
+ * workbook's monthly block, which is unreliable across exports and can arrive
+ * mis-dated. Bucketing by expiry month reproduces those monthly figures
+ * exactly, so the chart always matches the Hedge Summary below it.
+ *
+ * The horizon runs from the first expiry (or the current month, if the first
+ * expiry is already past) through the last, with empty months filled so the
+ * area is continuous. Hedges never sit in the past, so a stray date can't drag
+ * the axis backwards.
  */
 export function timeline(p: Portfolio): MonthlyPoint[] {
-  const rows = p.monthly
-  if (!rows.length) return []
-  let firstActive = -1
-  let lastActive = -1
-  rows.forEach((m, i) => {
-    if (m.protection > 0 || m.maxObligation > 0) {
-      if (firstActive < 0) firstActive = i
-      lastActive = i
-    }
-  })
-  if (firstActive < 0) return []
+  const dated = p.trades.filter((t) => t.expiry && !Number.isNaN(t.expiry.getTime()))
+  if (!dated.length) return []
 
+  const blank = (m: Date): MonthlyPoint => ({
+    month: m,
+    forecast: null,
+    protection: 0,
+    currentObligation: 0,
+    potentialObligation: 0,
+    maxObligation: 0,
+    avgRate: null,
+  })
+
+  const bucket = new Map<number, MonthlyPoint>()
+  for (const t of dated) {
+    const m = new Date(t.expiry.getFullYear(), t.expiry.getMonth(), 1)
+    const b = bucket.get(m.getTime()) ?? blank(m)
+    b.protection += t.protection
+    b.currentObligation += t.currentObligation
+    b.potentialObligation += t.potentialObligation
+    b.maxObligation += t.maxObligation
+    bucket.set(m.getTime(), b)
+  }
+
+  const keys = [...bucket.keys()].sort((a, b) => a - b)
   const monthStart = today()
   monthStart.setDate(1)
-  let start = firstActive
-  while (start < lastActive && rows[start].month < monthStart) start++
+  // Start at the first expiry, or the current month if the first expiry is past
+  // (but never after the last expiry).
+  let cursor = new Date(keys[0])
+  if (cursor < monthStart && monthStart.getTime() <= keys[keys.length - 1]) cursor = new Date(monthStart)
+  const end = new Date(keys[keys.length - 1])
 
-  const end = Math.min(rows.length, lastActive + 2)
-  return rows.slice(start, end)
+  const rows: MonthlyPoint[] = []
+  while (cursor <= end) {
+    rows.push(bucket.get(cursor.getTime()) ?? blank(new Date(cursor)))
+    cursor.setMonth(cursor.getMonth() + 1)
+  }
+  return rows
 }
 
 /**
