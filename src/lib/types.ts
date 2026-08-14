@@ -31,6 +31,13 @@ export type ProductFamily =
   | 'TARF'
   | 'Other'
 
+/**
+ * Top-level product category — the four buckets every hedge rolls up into for
+ * the ledger view (and, later, drill-down by category). Coarser than the
+ * granular {@link ProductFamily} that drives the scenario engine.
+ */
+export type ProductCategory = 'Forward' | 'Option' | 'TARF' | 'NDF' | 'Other'
+
 /** One hedge line item (a single expiry of a trade). */
 export interface Trade {
   id: string
@@ -44,6 +51,8 @@ export interface Trade {
   /** Full product description as it appears in the source tool. */
   product: string
   family: ProductFamily
+  /** Top-level bucket for the ledger view (Forward / Option / TARF / NDF). */
+  category: ProductCategory
   /** True when the product gears up the obligation beyond the protected amount. */
   leveraged: boolean
   protectionStrike: number | null

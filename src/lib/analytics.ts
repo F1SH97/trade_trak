@@ -29,6 +29,14 @@ export interface ProductSlice {
   credit: number
 }
 
+/**
+ * How breaching a barrier lands for the client:
+ *   • adverse — re-strikes / gears to a worse outcome;
+ *   • upside  — an improver / positive condition;
+ *   • mixed   — can cut either way (knock-outs, target redemptions).
+ */
+export type BarrierSentiment = 'adverse' | 'upside' | 'mixed'
+
 export interface TriggerEvent {
   trade: Trade
   /** The barrier level in focus. */
@@ -38,9 +46,8 @@ export interface TriggerEvent {
   /** When the barrier window opens (falls back to expiry). */
   date: Date
   windowEnd: Date | null
-  /** True when breaching the barrier hurts the client (adds obligation / kills
-   *  protection); false when it is merely an improvement condition. */
-  adverse: boolean
+  /** Client-side impact of breaching this barrier. */
+  sentiment: BarrierSentiment
   note: string
 }
 
@@ -112,11 +119,12 @@ export function nextExpiry(p: Portfolio): Trade | null {
 /**
  * Upcoming barrier / trigger events, soonest first.
  *
- * "Adverse" classification (negative matters / positive doesn't):
- *   • A leveraged product's knock-IN adds obligation → adverse.
- *   • A knock-OUT that removes protection → adverse.
- *   • An improver / participation upper barrier is an upside condition → benign.
- * The model errs toward flagging as adverse when a trade is leveraged.
+ * Sentiment rules of thumb:
+ *   • Knock-IN above the protection rate → adverse (re-strikes you to a worse
+ *     rate); at or below the protection rate it reads as an improver / upside.
+ *   • Knock-OUT → mixed: typically knocks out either the whole structure or
+ *     just the obligation leg, so it can help or hurt.
+ *   • TARF target barrier → mixed (redeems as the target accrues).
  */
 export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
   const now = today()
@@ -131,8 +139,8 @@ export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
     for (const leg of legs) {
       if (leg.level == null) continue
       const date = leg.start ?? t.expiry
-      const { adverse, note } = classifyBarrier(t, leg.level, leg.kind)
-      events.push({ trade: t, level: leg.level, kind: leg.kind, date, windowEnd: leg.end, adverse, note })
+      const { sentiment, note } = classifyBarrier(t, leg.level, leg.kind)
+      events.push({ trade: t, level: leg.level, kind: leg.kind, date, windowEnd: leg.end, sentiment, note })
     }
   }
   return events.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, limit)
@@ -142,26 +150,35 @@ function classifyBarrier(
   t: Trade,
   level: number,
   kind: 'trigger' | 'trigger2',
-): { adverse: boolean; note: string } {
+): { sentiment: BarrierSentiment; note: string } {
   const fam = t.family
   const ps = t.protectionStrike
   if (fam === 'Knock-Out') {
-    return { adverse: true, note: `Protection knocks out if ${t.ccy} trades through ${level.toFixed(4)}.` }
+    return {
+      sentiment: 'mixed',
+      note: `Knock-out at ${level.toFixed(4)} — typically removes the whole structure or just the obligation leg, so it can help or hurt.`,
+    }
   }
   if (fam === 'Knock-In' || fam === 'Knock-In Improver') {
-    // The lower of the two barriers on an improver is the leverage knock-in.
-    if (ps != null && Math.abs(level - ps) < 1e-6) {
-      return { adverse: true, note: `Leveraged obligation knocks in at ${level.toFixed(4)}.` }
+    // A knock-in above the protection rate re-strikes the client to a worse rate.
+    if (ps != null && level > ps + 1e-6) {
+      return {
+        sentiment: 'adverse',
+        note: `Knocks in at ${level.toFixed(4)}, above the ${ps.toFixed(4)} protection rate — re-strikes you to a worse rate.`,
+      }
     }
-    return { adverse: false, note: `Improver / upside condition at ${level.toFixed(4)} — a positive if reached.` }
+    return {
+      sentiment: 'upside',
+      note: `Knock-in at ${level.toFixed(4)}, at or below the protection rate — an improver / upside condition.`,
+    }
   }
   if (fam === 'TARF') {
-    return { adverse: false, note: `Target barrier at ${level.toFixed(4)}; trade redeems (knocks out) as target accrues.` }
+    return { sentiment: 'mixed', note: `Target barrier at ${level.toFixed(4)}; trade redeems as the target accrues.` }
   }
   // default: a lower barrier on a leveraged trade tends to add obligation
   const adverse = t.leveraged && kind === 'trigger'
   return {
-    adverse,
+    sentiment: adverse ? 'adverse' : 'upside',
     note: adverse
       ? `Barrier at ${level.toFixed(4)} increases obligation if breached.`
       : `Conditional barrier at ${level.toFixed(4)}.`,

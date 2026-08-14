@@ -18,6 +18,33 @@ import { ProtectionTimeline } from '../components/charts/ProtectionTimeline'
 import { ProductDonut } from '../components/charts/ProductDonut'
 import { CreditBar } from '../components/charts/CreditBar'
 import { categorical } from '../theme'
+import type { BarrierSentiment } from '../lib/analytics'
+import type { ReactNode } from 'react'
+
+/** Icon + tone + label for each barrier sentiment in the Next-triggers list. */
+const SENTIMENT: Record<
+  BarrierSentiment,
+  { wrap: string; icon: ReactNode; tone: 'critical' | 'warning' | 'good'; label: string }
+> = {
+  adverse: {
+    wrap: 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300',
+    icon: <AlertIcon />,
+    tone: 'critical',
+    label: 'Adverse',
+  },
+  mixed: {
+    wrap: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300',
+    icon: <MixedIcon />,
+    tone: 'warning',
+    label: 'Mixed',
+  },
+  upside: {
+    wrap: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300',
+    icon: <CheckIcon />,
+    tone: 'good',
+    label: 'Upside',
+  },
+}
 
 export function Overview() {
   const { portfolio, creditLimit, setCreditLimit } = useStore()
@@ -182,15 +209,17 @@ export function Overview() {
             <p className="py-6 text-center text-sm text-ink-muted">No barrier triggers in the live book.</p>
           ) : (
             <ul className="divide-y divide-line">
-              {triggers.map((ev, i) => (
+              {triggers.map((ev, i) => {
+                const s = SENTIMENT[ev.sentiment]
+                return (
                 <li key={i} className="flex items-center gap-3 py-2.5">
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${ev.adverse ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'}`}>
-                    {ev.adverse ? <AlertIcon /> : <CheckIcon />}
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${s.wrap}`}>
+                    {s.icon}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="tnum text-sm font-semibold text-ink">{rate(ev.level)}</span>
-                      <StatusDot tone={ev.adverse ? 'critical' : 'good'} label={ev.adverse ? 'Adverse' : 'Upside'} />
+                      <StatusDot tone={s.tone} label={s.label} />
                     </div>
                     <div className="truncate text-[11px] text-ink-muted" title={ev.note}>{ev.note}</div>
                   </div>
@@ -199,7 +228,8 @@ export function Overview() {
                     <div className="text-[10px] text-ink-muted">{relativeDays(ev.date)}</div>
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </Card>
@@ -233,6 +263,13 @@ function CheckIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+function MixedIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 7h11M7 7l3-3M7 7l3 3M17 17H6M17 17l-3-3M17 17l-3 3" />
     </svg>
   )
 }

@@ -11,7 +11,7 @@
  * tokenizer first.
  */
 
-import type { MonthlyPoint, ParseResult, Portfolio, ProductFamily, Trade } from './types'
+import type { MonthlyPoint, ParseResult, Portfolio, ProductCategory, ProductFamily, Trade } from './types'
 
 /* ----------------------------- tokenizer ------------------------------ */
 
@@ -158,9 +158,15 @@ function isTradeHeader(cells: string[]): boolean {
 
 /* ------------------------------ product ------------------------------- */
 
-export function classifyProduct(desc: string): { family: ProductFamily; leveraged: boolean } {
+export function classifyProduct(desc: string): {
+  family: ProductFamily
+  category: ProductCategory
+  leveraged: boolean
+} {
   const d = desc.toLowerCase()
   const leveraged = /leverag|geared|tarf|target|ratio/.test(d)
+
+  // Granular family — drives the scenario engine.
   let family: ProductFamily = 'Other'
   if (/tarf|target accrual/.test(d)) family = 'TARF'
   else if (/improver/.test(d)) family = 'Knock-In Improver'
@@ -169,7 +175,18 @@ export function classifyProduct(desc: string): { family: ProductFamily; leverage
   else if (/participat/.test(d)) family = 'Participating Forward'
   else if (/\bfec\b|forward|outright/.test(d)) family = 'Forward'
   else if (/call|put|vanilla|collar|option/.test(d)) family = 'Vanilla Option'
-  return { family, leveraged }
+
+  // Top-level category — the four buckets the ledger rolls up into. NDF is
+  // checked before Forward (its name contains "forward"), and Option before
+  // Forward (a participating forward is an option structure).
+  let category: ProductCategory = 'Other'
+  if (/\bndf\b|non.?deliverable/.test(d)) category = 'NDF'
+  else if (/tarf|target accrual/.test(d)) category = 'TARF'
+  else if (/knock|improver|option|collar|participat|vanilla|call|put|barrier|digital|seagull/.test(d))
+    category = 'Option'
+  else if (/\bfec\b|forward|outright/.test(d)) category = 'Forward'
+
+  return { family, category, leveraged }
 }
 
 /* ------------------------------ parse --------------------------------- */
@@ -255,7 +272,7 @@ export function parsePaste(text: string, label?: string): ParseResult {
       const expiry = parseDate(cExpiry != null ? row[cExpiry] : undefined)
       if (!expiry) continue
       const product = (cProduct != null ? row[cProduct] : '')?.trim() || 'Unknown'
-      const { family, leveraged } = classifyProduct(product)
+      const { family, category, leveraged } = classifyProduct(product)
       const ccy = (cCcy != null ? row[cCcy] : '')?.trim() || ''
       if (ccy && !pair) pair = ccy
       trades.push({
@@ -269,6 +286,7 @@ export function parsePaste(text: string, label?: string): ParseResult {
         ccy,
         product,
         family,
+        category,
         leveraged,
         protectionStrike: parseNumber(cPStrike != null ? row[cPStrike] : undefined),
         participationStrike: parseNumber(cPartStrike != null ? row[cPartStrike] : undefined),
