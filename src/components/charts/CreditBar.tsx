@@ -1,6 +1,7 @@
 import type { ProductSlice } from '../../lib/analytics'
 import { pct, usd, usdCompact } from '../../lib/format'
-import { categorical, STATUS, type Mode } from '../../theme'
+import { CATEGORY_LABEL } from '../../lib/products'
+import { categorical, categoryColor, STATUS, type Mode } from '../../theme'
 
 /** Credit utilisation meter + a segmented breakdown of credit by product. */
 export function CreditBar({
@@ -46,20 +47,20 @@ export function CreditBar({
       <div>
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted">By product</div>
         <div className="flex h-2.5 w-full overflow-hidden rounded-full">
-          {segments.map((s, i) => (
+          {segments.map((s) => (
             <div
-              key={s.family}
-              title={`${s.family}: ${usd(s.credit)}`}
-              style={{ width: `${(s.credit / (used || 1)) * 100}%`, background: palette[i % palette.length] }}
+              key={s.category}
+              title={`${CATEGORY_LABEL[s.category]}: ${usd(s.credit)}`}
+              style={{ width: `${(s.credit / (used || 1)) * 100}%`, background: categoryColor(s.category, mode) }}
             />
           ))}
         </div>
         <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-          {segments.map((s, i) => (
-            <li key={s.family} className="flex items-center justify-between gap-2 text-xs">
+          {segments.map((s) => (
+            <li key={s.category} className="flex items-center justify-between gap-2 text-xs">
               <span className="flex items-center gap-1.5 text-ink-soft">
-                <span className="inline-block h-2 w-2 rounded-sm" style={{ background: palette[i % palette.length] }} />
-                {s.family}
+                <span className="inline-block h-2 w-2 rounded-sm" style={{ background: categoryColor(s.category, mode) }} />
+                {CATEGORY_LABEL[s.category]}
               </span>
               <span className="tnum font-medium text-ink">{usdCompact(s.credit)}</span>
             </li>

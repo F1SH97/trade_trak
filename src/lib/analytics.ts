@@ -5,7 +5,7 @@
  */
 
 import { startOfDay } from './format'
-import type { MonthlyPoint, Portfolio, Trade } from './types'
+import type { MonthlyPoint, Portfolio, ProductCategory, Trade } from './types'
 
 export interface Kpis {
   totalProtection: number
@@ -22,20 +22,17 @@ export interface Kpis {
 }
 
 export interface ProductSlice {
-  family: string
+  category: ProductCategory
   protection: number
   maxObligation: number
   count: number
   credit: number
+  /** Protection-weighted average protection strike for the category. */
+  weightedRate: number | null
 }
 
-/**
- * How breaching a barrier lands for the client:
- *   • adverse — re-strikes / gears to a worse outcome;
- *   • upside  — an improver / positive condition;
- *   • mixed   — can cut either way (knock-outs, target redemptions).
- */
-export type BarrierSentiment = 'adverse' | 'upside' | 'mixed'
+/** Rough chance the barrier is reached before it lapses. */
+export type Likelihood = 'Low' | 'Medium' | 'High'
 
 export interface TriggerEvent {
   trade: Trade
@@ -46,8 +43,8 @@ export interface TriggerEvent {
   /** When the barrier window opens (falls back to expiry). */
   date: Date
   windowEnd: Date | null
-  /** Client-side impact of breaching this barrier. */
-  sentiment: BarrierSentiment
+  /** Rough chance of being reached, from distance and time to the barrier. */
+  likelihood: Likelihood
   note: string
 }
 
@@ -92,21 +89,28 @@ export function computeKpis(p: Portfolio): Kpis {
   }
 }
 
-/** Group protection / obligation / credit by product family. */
+/** Group protection / obligation / credit by top-level product category. */
 export function productMakeup(p: Portfolio): ProductSlice[] {
-  const map = new Map<string, ProductSlice>()
+  type Acc = ProductSlice & { _num: number; _den: number }
+  const map = new Map<ProductCategory, Acc>()
   for (const t of p.trades) {
-    let s = map.get(t.family)
+    let s = map.get(t.category)
     if (!s) {
-      s = { family: t.family, protection: 0, maxObligation: 0, count: 0, credit: 0 }
-      map.set(t.family, s)
+      s = { category: t.category, protection: 0, maxObligation: 0, count: 0, credit: 0, weightedRate: null, _num: 0, _den: 0 }
+      map.set(t.category, s)
     }
     s.protection += t.protection
     s.maxObligation += t.maxObligation
     s.credit += t.credit ?? 0
     s.count += 1
+    if (t.protectionStrike && t.protection) {
+      s._num += t.protectionStrike * t.protection
+      s._den += t.protection
+    }
   }
-  return [...map.values()].sort((a, b) => b.protection - a.protection)
+  return [...map.values()]
+    .map(({ _num, _den, ...s }) => ({ ...s, weightedRate: _den ? _num / _den : null }))
+    .sort((a, b) => b.protection - a.protection)
 }
 
 /** Next expiry on or after today. */
@@ -117,17 +121,12 @@ export function nextExpiry(p: Portfolio): Trade | null {
 }
 
 /**
- * Upcoming barrier / trigger events, soonest first.
- *
- * Sentiment rules of thumb:
- *   • Knock-IN above the protection rate → adverse (re-strikes you to a worse
- *     rate); at or below the protection rate it reads as an improver / upside.
- *   • Knock-OUT → mixed: typically knocks out either the whole structure or
- *     just the obligation leg, so it can help or hurt.
- *   • TARF target barrier → mixed (redeems as the target accrues).
+ * Upcoming barrier / trigger events, soonest first, each tagged with a rough
+ * Low / Medium / High likelihood of being reached.
  */
 export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
   const now = today()
+  const ref = referenceRate(p)
   const events: TriggerEvent[] = []
 
   for (const t of p.trades) {
@@ -139,50 +138,69 @@ export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
     for (const leg of legs) {
       if (leg.level == null) continue
       const date = leg.start ?? t.expiry
-      const { sentiment, note } = classifyBarrier(t, leg.level, leg.kind)
-      events.push({ trade: t, level: leg.level, kind: leg.kind, date, windowEnd: leg.end, sentiment, note })
+      events.push({
+        trade: t,
+        level: leg.level,
+        kind: leg.kind,
+        date,
+        windowEnd: leg.end,
+        likelihood: likelihoodFor(leg.level, ref, date, now),
+        note: barrierNote(t, leg.level),
+      })
     }
   }
   return events.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, limit)
 }
 
-function classifyBarrier(
-  t: Trade,
-  level: number,
-  kind: 'trigger' | 'trigger2',
-): { sentiment: BarrierSentiment; note: string } {
+/** Protection-weighted average strike — the book's centre of gravity. */
+function referenceRate(p: Portfolio): number {
+  let num = 0
+  let den = 0
+  for (const t of p.trades) {
+    if (t.protectionStrike && t.protection) {
+      num += t.protectionStrike * t.protection
+      den += t.protection
+    }
+  }
+  return den ? num / den : 0
+}
+
+// Rough AUD/USD annualised vol used to scale an expected move. This is an
+// intuition heuristic, not a priced probability.
+const ANNUAL_VOL = 0.1
+
+/**
+ * Likelihood a barrier is reached, as a z-score of its distance from the
+ * reference rate in expected-move units (distance ÷ σ√t). Nearer barriers and
+ * longer horizons score higher.
+ */
+function likelihoodFor(level: number, ref: number, date: Date, now: Date): Likelihood {
+  if (!ref) return 'Medium'
+  const years = Math.max((date.getTime() - now.getTime()) / (365 * 864e5), 1 / 365)
+  const sigma = ref * ANNUAL_VOL * Math.sqrt(years)
+  const z = Math.abs(level - ref) / (sigma || 1e-9)
+  if (z < 0.75) return 'High'
+  if (z < 1.75) return 'Medium'
+  return 'Low'
+}
+
+/** A short, neutral description of what the barrier does. */
+function barrierNote(t: Trade, level: number): string {
   const fam = t.family
   const ps = t.protectionStrike
   if (fam === 'Knock-Out') {
-    return {
-      sentiment: 'mixed',
-      note: `Knock-out at ${level.toFixed(4)} — typically removes the whole structure or just the obligation leg, so it can help or hurt.`,
-    }
+    return `Knock-out at ${level.toFixed(4)} — removes the structure or the obligation leg.`
   }
   if (fam === 'Knock-In' || fam === 'Knock-In Improver') {
-    // A knock-in above the protection rate re-strikes the client to a worse rate.
     if (ps != null && level > ps + 1e-6) {
-      return {
-        sentiment: 'adverse',
-        note: `Knocks in at ${level.toFixed(4)}, above the ${ps.toFixed(4)} protection rate — re-strikes you to a worse rate.`,
-      }
+      return `Knocks in at ${level.toFixed(4)}, above the ${ps.toFixed(4)} protection rate — re-strikes to a worse rate.`
     }
-    return {
-      sentiment: 'upside',
-      note: `Knock-in at ${level.toFixed(4)}, at or below the protection rate — an improver / upside condition.`,
-    }
+    return `Improver at ${level.toFixed(4)} — knocks in at or below the protection rate.`
   }
   if (fam === 'TARF') {
-    return { sentiment: 'mixed', note: `Target barrier at ${level.toFixed(4)}; trade redeems as the target accrues.` }
+    return `Target barrier at ${level.toFixed(4)}; trade redeems as the target accrues.`
   }
-  // default: a lower barrier on a leveraged trade tends to add obligation
-  const adverse = t.leveraged && kind === 'trigger'
-  return {
-    sentiment: adverse ? 'adverse' : 'upside',
-    note: adverse
-      ? `Barrier at ${level.toFixed(4)} increases obligation if breached.`
-      : `Conditional barrier at ${level.toFixed(4)}.`,
-  }
+  return `Barrier at ${level.toFixed(4)}.`
 }
 
 /** Cumulative protection & obligation timeline for the overview area chart. */

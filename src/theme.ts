@@ -38,6 +38,20 @@ export function categorical(mode: Mode): string[] {
   return CATEGORICAL[mode]
 }
 
+// Concrete chart hues per product category — matched to the Tailwind pill
+// colours in lib/products.ts. Positive / neutral hues only (no red or amber).
+const CATEGORY_HUE: Record<string, Record<Mode, string>> = {
+  Forward: { light: '#2a78d6', dark: '#3987e5' },
+  Option: { light: '#4a3aa7', dark: '#9085e9' },
+  TARF: { light: '#0f9d78', dark: '#14b892' },
+  NDF: { light: '#d6538a', dark: '#d55181' },
+  Other: { light: '#8794a1', dark: '#748896' },
+}
+
+export function categoryColor(category: string, mode: Mode): string {
+  return (CATEGORY_HUE[category] ?? CATEGORY_HUE.Other)[mode]
+}
+
 /** Chart surface / axis / grid / ink tokens, matched to index.css. */
 export function chartTokens(mode: Mode) {
   return mode === 'dark'

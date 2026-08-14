@@ -11,39 +11,21 @@ import {
   upcomingTriggers,
 } from '../lib/analytics'
 import { fmtDay, num, pct, rate, relativeDays, usd, usdCompact } from '../lib/format'
-import { Card, CardHeader, Empty, StatusDot, Badge } from '../components/ui'
+import { Card, CardHeader, Empty, Badge } from '../components/ui'
 import { KpiTile } from '../components/KpiTile'
 import { TradeTable } from '../components/TradeTable'
 import { ProtectionTimeline } from '../components/charts/ProtectionTimeline'
 import { ProductDonut } from '../components/charts/ProductDonut'
 import { CreditBar } from '../components/charts/CreditBar'
 import { categorical } from '../theme'
-import type { BarrierSentiment } from '../lib/analytics'
-import type { ReactNode } from 'react'
+import type { Likelihood } from '../lib/analytics'
 
-/** Icon + tone + label for each barrier sentiment in the Next-triggers list. */
-const SENTIMENT: Record<
-  BarrierSentiment,
-  { wrap: string; icon: ReactNode; tone: 'critical' | 'warning' | 'good'; label: string }
-> = {
-  adverse: {
-    wrap: 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300',
-    icon: <AlertIcon />,
-    tone: 'critical',
-    label: 'Adverse',
-  },
-  mixed: {
-    wrap: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300',
-    icon: <MixedIcon />,
-    tone: 'warning',
-    label: 'Mixed',
-  },
-  upside: {
-    wrap: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300',
-    icon: <CheckIcon />,
-    tone: 'good',
-    label: 'Upside',
-  },
+/** Pill styling for each barrier likelihood (probability, not sentiment — no
+ *  red / green so it never reads as good vs bad). */
+const LIKELIHOOD: Record<Likelihood, string> = {
+  High: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+  Medium: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  Low: 'bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300',
 }
 
 export function Overview() {
@@ -210,16 +192,18 @@ export function Overview() {
           ) : (
             <ul className="divide-y divide-line">
               {triggers.map((ev, i) => {
-                const s = SENTIMENT[ev.sentiment]
+                const pill = LIKELIHOOD[ev.likelihood]
                 return (
                 <li key={i} className="flex items-center gap-3 py-2.5">
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${s.wrap}`}>
-                    {s.icon}
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${pill}`}>
+                    <TargetIcon />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="tnum text-sm font-semibold text-ink">{rate(ev.level)}</span>
-                      <StatusDot tone={s.tone} label={s.label} />
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${pill}`}>
+                        {ev.likelihood} likelihood
+                      </span>
                     </div>
                     <div className="truncate text-[11px] text-ink-muted" title={ev.note}>{ev.note}</div>
                   </div>
@@ -252,24 +236,10 @@ function Legend({ color, label, dashed }: { color: string; label: string; dashed
     </span>
   )
 }
-function AlertIcon() {
+function TargetIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 9v4M12 17h.01M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0z" />
-    </svg>
-  )
-}
-function CheckIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  )
-}
-function MixedIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 7h11M7 7l3-3M7 7l3 3M17 17H6M17 17l-3-3M17 17l-3 3" />
+      <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="0.5" fill="currentColor" />
     </svg>
   )
 }

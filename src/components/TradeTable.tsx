@@ -1,33 +1,17 @@
 import { useMemo, useState } from 'react'
-import type { ProductCategory, Trade } from '../lib/types'
+import type { Trade } from '../lib/types'
 import { fmtDay, rate, relativeDays, usd } from '../lib/format'
-import { Badge } from './ui'
+import { CATEGORY_LABEL, CATEGORY_PILL } from '../lib/products'
 import { startOfDay } from '../lib/format'
 
 type SortKey = 'expiry' | 'protection' | 'maxObligation' | 'credit'
 
-/** Pill colour by top-level category. */
-const categoryTone: Record<ProductCategory, Parameters<typeof Badge>[0]['tone']> = {
-  Forward: 'brand',
-  Option: 'serious',
-  TARF: 'warning',
-  NDF: 'good',
-  Other: 'neutral',
-}
-
-/** Expanded category name shown as the grey sub-label under each pill. */
-const categoryFull: Record<ProductCategory, string> = {
-  Forward: 'Forward Exchange Contract',
-  Option: 'Option',
-  TARF: 'Target Accrual Redemption Forward',
-  NDF: 'Non-Deliverable Forward',
-  Other: 'Other product',
-}
-
-/** The product name for the pill — the source description minus the LHS/RHS side tag. */
+/** The product name for the pill — source description minus the "Leveraged"
+ *  prefix (surfaced separately as a flag) and the LHS/RHS side tag. */
 function productName(product: string): string {
   return product
     .replace(/\((?:LHS|RHS)\)/gi, '')
+    .replace(/\bleveraged\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -105,12 +89,16 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap items-center gap-1.5" title={t.product}>
-                    <Badge tone={categoryTone[t.category]}>{productName(t.product)}</Badge>
-                    {t.leveraged && !/leverag/i.test(t.product) && (
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${CATEGORY_PILL[t.category]}`}
+                    >
+                      {productName(t.product)}
+                    </span>
+                    {t.leveraged && (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">leveraged</span>
                     )}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-ink-muted">{categoryFull[t.category]}</div>
+                  <div className="mt-0.5 text-[11px] text-ink-muted">{CATEGORY_LABEL[t.category]}</div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-ink-soft">{t.ccy}</td>
                 <td className="tnum whitespace-nowrap px-3 py-2 text-right font-medium text-ink">{usd(t.protection)}</td>
