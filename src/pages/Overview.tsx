@@ -5,8 +5,10 @@ import { useTheme } from '../lib/theme-context'
 import {
   computeKpis,
   creditUsage,
+  makeupByPair,
   nextExpiry,
   productMakeup,
+  ratesByPair,
   timeline,
   upcomingTriggers,
 } from '../lib/analytics'
@@ -38,6 +40,8 @@ export function Overview() {
     return {
       kpis: computeKpis(portfolio),
       products: productMakeup(portfolio),
+      makeup: makeupByPair(portfolio),
+      rates: ratesByPair(portfolio),
       triggers: upcomingTriggers(portfolio, 6),
       next: nextExpiry(portfolio),
       series: timeline(portfolio),
@@ -59,7 +63,8 @@ export function Overview() {
     )
   }
 
-  const { kpis, products, triggers, next, series, credit } = model
+  const { kpis, products, makeup, rates, triggers, next, series, credit } = model
+  const multiPair = rates.length > 1
   const palette = categorical(mode)
 
   return (
@@ -107,7 +112,15 @@ export function Overview() {
           sub={`+${usdCompact(kpis.potentialObligation)} if leveraged`}
           accent={palette[1]}
         />
-        <KpiTile label="Avg protection rate" value={rate(kpis.weightedRate)} sub={`${kpis.pair} · notional-weighted`} accent={palette[6]} />
+        {rates.map((r) => (
+          <KpiTile
+            key={r.pair}
+            label={multiPair ? `Avg rate · ${r.pair}` : 'Avg protection rate'}
+            value={rate(r.weightedRate)}
+            sub={multiPair ? 'notional-weighted' : `${r.pair} · notional-weighted`}
+            accent={palette[6]}
+          />
+        ))}
         <KpiTile label="Credit in use" value={usdCompact(kpis.totalCredit)} sub={credit.utilisation != null ? `${pct(credit.utilisation, 0)} of limit` : 'no limit set'} accent={palette[4]} />
         <KpiTile label="Live trades" value={num(kpis.activeTrades)} sub={`${kpis.tradeCount} total`} accent={palette[5]} />
       </div>
@@ -130,8 +143,23 @@ export function Overview() {
         </Card>
 
         <Card>
-          <CardHeader title="Product make-up" subtitle="Share of protection by category" />
-          <ProductDonut data={products} mode={mode} />
+          <CardHeader
+            title="Product make-up"
+            subtitle={multiPair ? 'Share of protection by category, per currency pair' : 'Share of protection by category'}
+          />
+          <div className="space-y-4">
+            {makeup.map((mk) => (
+              <div key={mk.pair}>
+                {multiPair && (
+                  <div className="mb-2 flex items-baseline justify-between border-t border-line pt-3 first:border-t-0 first:pt-0">
+                    <span className="text-xs font-semibold text-ink">{mk.pair}</span>
+                    <span className="tnum text-[11px] text-ink-muted">{usdCompact(mk.protection)} protected</span>
+                  </div>
+                )}
+                <ProductDonut data={mk.slices} mode={mode} />
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
 

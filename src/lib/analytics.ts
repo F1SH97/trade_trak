@@ -89,6 +89,66 @@ export function computeKpis(p: Portfolio): Kpis {
   }
 }
 
+/** A currency pair's protection-weighted average rate. */
+export interface PairRate {
+  pair: string
+  weightedRate: number | null
+  protection: number
+}
+
+/** The set of currency pairs in the book, ordered by protection (largest first). */
+export function pairsByProtection(p: Portfolio): string[] {
+  const totals = new Map<string, number>()
+  for (const t of p.trades) {
+    const pair = t.ccy || p.pair
+    totals.set(pair, (totals.get(pair) ?? 0) + t.protection)
+  }
+  return [...totals.entries()].sort((a, b) => b[1] - a[1]).map(([pair]) => pair)
+}
+
+/**
+ * Protection-weighted average protection rate for each currency pair. Rates
+ * across different pairs (e.g. 0.65 AUD/USD vs 1.08 EUR/USD) must never be
+ * blended, so they are always reported per pair.
+ */
+export function ratesByPair(p: Portfolio): PairRate[] {
+  const m = new Map<string, { num: number; den: number; protection: number }>()
+  for (const t of p.trades) {
+    const pair = t.ccy || p.pair
+    let a = m.get(pair)
+    if (!a) {
+      a = { num: 0, den: 0, protection: 0 }
+      m.set(pair, a)
+    }
+    a.protection += t.protection
+    if (t.protectionStrike && t.protection) {
+      a.num += t.protectionStrike * t.protection
+      a.den += t.protection
+    }
+  }
+  return [...m.entries()]
+    .map(([pair, a]) => ({ pair, weightedRate: a.den ? a.num / a.den : null, protection: a.protection }))
+    .sort((x, y) => y.protection - x.protection)
+}
+
+/** Product make-up for a single currency pair. */
+export interface PairMakeup {
+  pair: string
+  slices: ProductSlice[]
+  protection: number
+}
+
+/**
+ * Product make-up split per currency pair, so a pair's category mix is never
+ * conflated with another's. Returns one entry per pair, largest book first.
+ */
+export function makeupByPair(p: Portfolio): PairMakeup[] {
+  return pairsByProtection(p).map((pair) => {
+    const slices = productMakeup({ ...p, trades: p.trades.filter((t) => (t.ccy || p.pair) === pair) })
+    return { pair, slices, protection: slices.reduce((s, d) => s + d.protection, 0) }
+  })
+}
+
 /** Group protection / obligation / credit by top-level product category. */
 export function productMakeup(p: Portfolio): ProductSlice[] {
   type Acc = ProductSlice & { _num: number; _den: number }
