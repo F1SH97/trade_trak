@@ -9,7 +9,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { MonthlyPoint } from '../../lib/types'
-import { fmtMonth, usd, usdCompact } from '../../lib/format'
+import { fmtMonth, niceAxis, usd, usdCompact } from '../../lib/format'
 import { categorical, chartTokens, type Mode } from '../../theme'
 import { TooltipCard, axisProps } from './common'
 
@@ -24,6 +24,11 @@ export function ProtectionTimeline({ data, mode }: { data: MonthlyPoint[]; mode:
     max: m.maxObligation,
   }))
 
+  // A "nice" y-axis that starts near the data (not always 0) and steps in
+  // round intervals, so variance is legible whatever the scale.
+  const values = rows.flatMap((r) => [r.protection, r.current, r.max]).filter((v) => Number.isFinite(v))
+  const axis = niceAxis(values.length ? Math.min(...values) : 0, values.length ? Math.max(...values) : 1)
+
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer>
@@ -36,7 +41,14 @@ export function ProtectionTimeline({ data, mode }: { data: MonthlyPoint[]; mode:
           </defs>
           <CartesianGrid vertical={false} stroke={t.grid} />
           <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={24} {...axisProps(mode)} />
-          <YAxis tickFormatter={(v) => usdCompact(v as number)} width={52} {...axisProps(mode)} />
+          <YAxis
+            domain={axis.domain}
+            ticks={axis.ticks}
+            allowDecimals={false}
+            tickFormatter={(v) => usdCompact(v as number)}
+            width={52}
+            {...axisProps(mode)}
+          />
           <Tooltip
             cursor={{ stroke: t.axis, strokeDasharray: '3 3' }}
             content={({ active, payload, label }) =>
@@ -55,6 +67,7 @@ export function ProtectionTimeline({ data, mode }: { data: MonthlyPoint[]; mode:
           <Area
             type="monotone"
             dataKey="protection"
+            baseValue={axis.domain[0]}
             stroke={blue}
             strokeWidth={2}
             fill="url(#protFill)"

@@ -1,4 +1,5 @@
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useStore } from './lib/store'
 import { useTheme } from './lib/theme-context'
 import { Badge } from './components/ui'
@@ -13,12 +14,23 @@ const NAV = [
   { to: '/import', label: 'Import data', icon: PasteIcon },
 ]
 
+/** Scroll back to the top whenever the route (path or query) changes, so
+ *  deep links like a strip view land at the page heading, not mid-page. */
+function ScrollToTop() {
+  const { pathname, search } = useLocation()
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }, [pathname, search])
+  return null
+}
+
 export default function App() {
   const { portfolio, isSample } = useStore()
   const { mode, toggle } = useTheme()
 
   return (
     <div className="min-h-full">
+      <ScrollToTop />
       <header className="sticky top-0 z-30 border-b border-line bg-brand-800 text-white">
         <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-4 px-4">
           <div className="flex items-center gap-2.5">

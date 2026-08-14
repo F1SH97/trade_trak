@@ -20,14 +20,13 @@ import { ProtectionTimeline } from '../components/charts/ProtectionTimeline'
 import { ProductDonut } from '../components/charts/ProductDonut'
 import { CreditBar } from '../components/charts/CreditBar'
 import { categorical } from '../theme'
-import type { Likelihood } from '../lib/analytics'
+import type { TriggerObservation } from '../lib/analytics'
 
-/** Pill styling for each barrier likelihood (probability, not sentiment — no
- *  red / green so it never reads as good vs bad). */
-const LIKELIHOOD: Record<Likelihood, string> = {
-  High: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
-  Medium: 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
-  Low: 'bg-slate-100 text-slate-500 dark:bg-slate-500/15 dark:text-slate-300',
+/** Short label for when a trigger is live. */
+const OBSERVATION_LABEL: Record<TriggerObservation, string> = {
+  window: 'Window',
+  expiry: 'At expiry',
+  lifetime: 'Lifetime',
 }
 
 export function Overview() {
@@ -212,36 +211,33 @@ export function Overview() {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Next triggers"
-            subtitle="Upcoming barrier observations — adverse levels are the ones that matter"
+            subtitle="Upcoming barrier observations — when each is live and what breaching it means"
             right={<Link to="/analysis" className="text-[11px] font-medium text-brand-600 hover:underline dark:text-brand-300">Open analysis →</Link>}
           />
           {triggers.length === 0 ? (
             <p className="py-6 text-center text-sm text-ink-muted">No barrier triggers in the live book.</p>
           ) : (
             <ul className="divide-y divide-line">
-              {triggers.map((ev, i) => {
-                const pill = LIKELIHOOD[ev.likelihood]
-                return (
-                <li key={i} className="flex items-center gap-3 py-2.5">
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${pill}`}>
+              {triggers.map((ev, i) => (
+                <li key={i} className="flex items-start gap-3 py-2.5">
+                  <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-sunken text-ink-muted">
                     <TargetIcon />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="tnum text-sm font-semibold text-ink">{rate(ev.level)}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${pill}`}>
-                        {ev.likelihood} likelihood
+                      <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-semibold text-ink-soft">
+                        {OBSERVATION_LABEL[ev.observation]}
                       </span>
                     </div>
-                    <div className="truncate text-[11px] text-ink-muted" title={ev.note}>{ev.note}</div>
+                    <div className="mt-0.5 text-[11px] leading-snug text-ink-muted">{ev.note}</div>
                   </div>
                   <div className="whitespace-nowrap text-right">
                     <div className="text-xs font-medium text-ink">{fmtDay(ev.date)}</div>
                     <div className="text-[10px] text-ink-muted">{relativeDays(ev.date)}</div>
                   </div>
                 </li>
-                )
-              })}
+              ))}
             </ul>
           )}
         </Card>
@@ -249,7 +245,7 @@ export function Overview() {
 
       {/* Trade table */}
       <Card>
-        <CardHeader title="Hedge ledger" subtitle={`All ${kpis.tradeCount} lines — click a column to sort`} right={<Badge tone="neutral">{kpis.pair}</Badge>} />
+        <CardHeader title="Hedge Summary" subtitle={`All ${kpis.tradeCount} lines — click a product to view its strip, or a column to sort`} right={<Badge tone="neutral">{kpis.pair}</Badge>} />
         <TradeTable trades={portfolio.trades} />
       </Card>
     </div>

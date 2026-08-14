@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useStore } from '../lib/store'
 import { useTheme } from '../lib/theme-context'
+import { tradesInStrip } from '../lib/analytics'
 import {
   evaluatePortfolio,
   impliedSpot,
@@ -37,24 +38,37 @@ const statusTone: Record<ScenarioStatus, { bg: string; label: string }> = {
 export function Analysis() {
   const { portfolio } = useStore()
   const { mode } = useTheme()
+  const [params] = useSearchParams()
+  const stripParam = params.get('strip')
 
-  const bounds = useMemo(() => (portfolio ? spotBounds(portfolio) : { min: 0.55, max: 0.8 }), [portfolio])
-  const implied = useMemo(() => (portfolio ? impliedSpot(portfolio) : 0.65), [portfolio])
+  // When arriving from a Hedge Summary pill, narrow the analysis to that strip
+  // (all expiries booked under one ticket). Falls back to the whole book.
+  const book = useMemo(() => {
+    if (!portfolio) return null
+    if (!stripParam) return portfolio
+    const trades = tradesInStrip(portfolio, stripParam)
+    return trades.length ? { ...portfolio, trades } : portfolio
+  }, [portfolio, stripParam])
+  const stripActive = !!book && book !== portfolio
+
+  const bounds = useMemo(() => (book ? spotBounds(book) : { min: 0.55, max: 0.8 }), [book])
+  const implied = useMemo(() => (book ? impliedSpot(book) : 0.65), [book])
 
   const [spot, setSpot] = useState<number>(() => implied)
   const [perspective, setPerspective] = useState<Perspective>('sellUSD')
   const [observation, setObservation] = useState<Observation>('expiry')
 
   const scenario = useMemo(
-    () => (portfolio ? evaluatePortfolio(portfolio, spot, perspective, observation) : null),
-    [portfolio, spot, perspective, observation],
+    // Show every expiry in a strip (including past ones); otherwise only live trades.
+    () => (book ? evaluatePortfolio(book, spot, perspective, observation, !stripActive) : null),
+    [book, spot, perspective, observation, stripActive],
   )
   const curve = useMemo(
-    () => (portfolio ? payoffCurve(portfolio, perspective, { ...bounds, steps: 70 }) : []),
-    [portfolio, perspective, bounds],
+    () => (book ? payoffCurve(book, perspective, { ...bounds, steps: 70 }) : []),
+    [book, perspective, bounds],
   )
 
-  if (!portfolio || !scenario) {
+  if (!portfolio || !book || !scenario) {
     return (
       <Empty
         title="No hedge data to analyse"
@@ -77,10 +91,23 @@ export function Analysis() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Analysis · Market scenarios</h1>
         <p className="mt-0.5 text-sm text-ink-soft">
-          Move {portfolio.pair} and see how every hedge responds — which barriers break, how obligations leverage, and what
+          Move {book.pair} and see how every hedge responds — which barriers break, how obligations leverage, and what
           each rate is worth.
         </p>
       </div>
+
+      {stripActive && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs dark:border-brand-500/30 dark:bg-brand-500/10">
+          <span className="text-ink-soft">
+            Showing one strip — <span className="font-semibold text-ink">{book.trades.length} {book.trades.length === 1 ? 'expiry' : 'expiries'}</span>{' '}
+            under ticket <span className="tnum font-medium text-ink">{stripParam}</span>
+            <span className="text-ink-muted"> · {book.trades[0]?.product}</span>
+          </span>
+          <Link to="/analysis" className="whitespace-nowrap font-medium text-brand-600 hover:underline dark:text-brand-300">
+            Show full book →
+          </Link>
+        </div>
+      )}
 
       {/* Controls */}
       <Card>

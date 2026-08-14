@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { Trade } from '../lib/types'
 import { fmtDay, rate, relativeDays, usd } from '../lib/format'
+import { stripKeyOf } from '../lib/analytics'
 import { CATEGORY_LABEL } from '../lib/products'
 import { categoryColor } from '../theme'
 import { startOfDay } from '../lib/format'
@@ -89,13 +91,15 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
                   {!expired && <div className="text-[10px] text-ink-muted">{relativeDays(t.expiry)}</div>}
                 </td>
                 <td className="px-3 py-2">
-                  <div className="flex flex-wrap items-center gap-1.5" title={t.product}>
-                    <span
-                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Link
+                      to={`/analysis?strip=${encodeURIComponent(stripKeyOf(t))}`}
+                      title={`${t.product} — view this strip in Analysis`}
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white transition hover:opacity-85 hover:ring-2 hover:ring-offset-1 hover:ring-offset-surface"
                       style={{ backgroundColor: categoryColor(t.category) }}
                     >
                       {productName(t.product)}
-                    </span>
+                    </Link>
                     {t.leveraged && (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-orange-500">leveraged</span>
                     )}

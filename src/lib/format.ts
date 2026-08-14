@@ -82,3 +82,30 @@ export function startOfDay(d: Date): Date {
   x.setHours(0, 0, 0, 0)
   return x
 }
+
+/**
+ * An aesthetically pleasing linear axis for a value range: a rounded
+ * [lo, hi] domain plus evenly-spaced "nice" tick values (1 / 2 / 5 × 10ⁿ).
+ * The domain lifts off zero when the data does, so variance stays visible,
+ * but the lower bound never sits above the data (nothing gets clipped).
+ */
+export function niceAxis(dataMin: number, dataMax: number, targetTicks = 5): { domain: [number, number]; ticks: number[] } {
+  if (!Number.isFinite(dataMin) || !Number.isFinite(dataMax) || dataMax <= 0) return { domain: [0, 1], ticks: [0, 1] }
+  const lo0 = Math.max(0, Math.min(dataMin, dataMax))
+  const hi0 = Math.max(dataMin, dataMax)
+  const niceNum = (x: number, round: boolean) => {
+    if (x <= 0) return 1
+    const exp = Math.floor(Math.log10(x))
+    const f = x / 10 ** exp
+    const nf = round ? (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) : f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10
+    return nf * 10 ** exp
+  }
+  const step = niceNum((hi0 - lo0 || hi0) / Math.max(1, targetTicks - 1), true)
+  let lo = Math.floor(lo0 / step) * step
+  // leave a little breathing room below the data unless it reaches zero
+  if (lo > 0 && lo0 - lo < step * 0.5) lo = Math.max(0, lo - step)
+  const hi = Math.max(lo + step, Math.ceil(hi0 / step) * step)
+  const ticks: number[] = []
+  for (let v = lo; v <= hi + step * 1e-6; v += step) ticks.push(Math.round(v))
+  return { domain: [lo, hi], ticks }
+}

@@ -4,7 +4,7 @@
  * whenever a new paste is imported.
  */
 
-import { startOfDay } from './format'
+import { fmtDay, startOfDay } from './format'
 import type { MonthlyPoint, Portfolio, ProductCategory, Trade } from './types'
 
 export interface Kpis {
@@ -31,8 +31,8 @@ export interface ProductSlice {
   weightedRate: number | null
 }
 
-/** Rough chance the barrier is reached before it lapses. */
-export type Likelihood = 'Low' | 'Medium' | 'High'
+/** When a trigger is observable. */
+export type TriggerObservation = 'window' | 'expiry' | 'lifetime'
 
 export interface TriggerEvent {
   trade: Trade
@@ -43,8 +43,9 @@ export interface TriggerEvent {
   /** When the barrier window opens (falls back to expiry). */
   date: Date
   windowEnd: Date | null
-  /** Rough chance of being reached, from distance and time to the barrier. */
-  likelihood: Likelihood
+  /** When this trigger is live. */
+  observation: TriggerObservation
+  /** Plain-language description of when it is live and what breaching it means. */
   note: string
 }
 
@@ -181,12 +182,11 @@ export function nextExpiry(p: Portfolio): Trade | null {
 }
 
 /**
- * Upcoming barrier / trigger events, soonest first, each tagged with a rough
- * Low / Medium / High likelihood of being reached.
+ * Upcoming barrier / trigger events, soonest first. Each carries when it is
+ * observable and a plain-language note of what breaching it would mean.
  */
 export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
   const now = today()
-  const ref = referenceRate(p)
   const events: TriggerEvent[] = []
 
   for (const t of p.trades) {
@@ -198,82 +198,108 @@ export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
     for (const leg of legs) {
       if (leg.level == null) continue
       const date = leg.start ?? t.expiry
+      const observation = observationOf(t, leg.start, leg.end)
       events.push({
         trade: t,
         level: leg.level,
         kind: leg.kind,
         date,
         windowEnd: leg.end,
-        likelihood: likelihoodFor(leg.level, ref, date, now),
-        note: barrierNote(t, leg.level),
+        observation,
+        note: triggerNote(t, leg.level, observation, leg.start, leg.end),
       })
     }
   }
   return events.sort((a, b) => a.date.getTime() - b.date.getTime()).slice(0, limit)
 }
 
-/** Protection-weighted average strike — the book's centre of gravity. */
-function referenceRate(p: Portfolio): number {
-  let num = 0
-  let den = 0
-  for (const t of p.trades) {
-    if (t.protectionStrike && t.protection) {
-      num += t.protectionStrike * t.protection
-      den += t.protection
-    }
-  }
-  return den ? num / den : 0
+/** How a trigger is observed: within a window, only at expiry, or continuously. */
+function observationOf(t: Trade, legStart: Date | null, legEnd: Date | null): TriggerObservation {
+  const n = t.product.toLowerCase()
+  if (/window/.test(n) || (legStart && legEnd)) return 'window'
+  if (/expiry/.test(n)) return 'expiry'
+  return 'lifetime'
 }
 
-// Rough AUD/USD annualised vol used to scale an expected move. This is an
-// intuition heuristic, not a priced probability.
-const ANNUAL_VOL = 0.1
+/** LHS obligates above the trigger; RHS obligates below it. */
+function sideOf(t: Trade): 'LHS' | 'RHS' | null {
+  if (/\brhs\b/i.test(t.product)) return 'RHS'
+  if (/\blhs\b/i.test(t.product)) return 'LHS'
+  return null
+}
+
+/** "Live during the window (…). If AUD/USD is above 0.6930 then, you're obligated…" */
+function triggerNote(
+  t: Trade,
+  level: number,
+  obs: TriggerObservation,
+  start: Date | null,
+  end: Date | null,
+): string {
+  const when =
+    obs === 'window'
+      ? start && end
+        ? `Live only during the window (${fmtDay(start)} – ${fmtDay(end)})`
+        : 'Live only during the observation window'
+      : obs === 'expiry'
+        ? 'Live only at 3pm Tokyo on the expiry date'
+        : 'Live throughout the life of the trade'
+
+  const pair = t.ccy || 'the spot rate'
+  const side = sideOf(t)
+  const cond =
+    side === 'RHS'
+      ? `if ${pair} is below ${level.toFixed(4)}`
+      : side === 'LHS'
+        ? `if ${pair} is above ${level.toFixed(4)}`
+        : `if ${pair} trades through ${level.toFixed(4)}`
+  return `${when} — ${cond} in that period, you're obligated at your protection (or enhanced) rate.`
+}
 
 /**
- * Likelihood a barrier is reached, as a z-score of its distance from the
- * reference rate in expected-move units (distance ÷ σ√t). Nearer barriers and
- * longer horizons score higher.
+ * Protection & obligation timeline for the overview area chart.
+ *
+ * The chart looks forward from the first live expiry: leading months with no
+ * cover — and any month in the past — are dropped, and trailing all-zero
+ * months are trimmed (keeping one month of padding). Hedges cannot sit in the
+ * past, so a spuriously-dated early row never drags the axis backwards.
  */
-function likelihoodFor(level: number, ref: number, date: Date, now: Date): Likelihood {
-  if (!ref) return 'Medium'
-  const years = Math.max((date.getTime() - now.getTime()) / (365 * 864e5), 1 / 365)
-  const sigma = ref * ANNUAL_VOL * Math.sqrt(years)
-  const z = Math.abs(level - ref) / (sigma || 1e-9)
-  if (z < 0.75) return 'High'
-  if (z < 1.75) return 'Medium'
-  return 'Low'
-}
-
-/** A short, neutral description of what the barrier does. */
-function barrierNote(t: Trade, level: number): string {
-  const fam = t.family
-  const ps = t.protectionStrike
-  if (fam === 'Knock-Out') {
-    return `Knock-out at ${level.toFixed(4)} — removes the structure or the obligation leg.`
-  }
-  if (fam === 'Knock-In' || fam === 'Knock-In Improver') {
-    if (ps != null && level > ps + 1e-6) {
-      return `Knocks in at ${level.toFixed(4)}, above the ${ps.toFixed(4)} protection rate — re-strikes to a worse rate.`
-    }
-    return `Improver at ${level.toFixed(4)} — knocks in at or below the protection rate.`
-  }
-  if (fam === 'TARF') {
-    return `Target barrier at ${level.toFixed(4)}; trade redeems as the target accrues.`
-  }
-  return `Barrier at ${level.toFixed(4)}.`
-}
-
-/** Cumulative protection & obligation timeline for the overview area chart. */
 export function timeline(p: Portfolio): MonthlyPoint[] {
-  // Trim trailing all-zero months so the chart focuses on the active horizon
-  // (keep one zero month of padding after the last active month).
   const rows = p.monthly
+  if (!rows.length) return []
+  let firstActive = -1
   let lastActive = -1
   rows.forEach((m, i) => {
-    if (m.protection > 0 || m.maxObligation > 0) lastActive = i
+    if (m.protection > 0 || m.maxObligation > 0) {
+      if (firstActive < 0) firstActive = i
+      lastActive = i
+    }
   })
+  if (firstActive < 0) return []
+
+  const monthStart = today()
+  monthStart.setDate(1)
+  let start = firstActive
+  while (start < lastActive && rows[start].month < monthStart) start++
+
   const end = Math.min(rows.length, lastActive + 2)
-  return rows.slice(0, end)
+  return rows.slice(start, end)
+}
+
+/**
+ * Strip key for a trade — the identifier a set of related expiries share.
+ * A strip is one structure booked across several expiries under one ticket;
+ * FEC strips share a ticket base with a differing "_00N" suffix, so that
+ * suffix is stripped. Trades with no ticket stand alone under their own id.
+ */
+export function stripKeyOf(t: Trade): string {
+  if (t.ticket) return t.ticket.replace(/_0*\d+$/, '')
+  return t.id
+}
+
+/** All trades belonging to a strip, earliest expiry first. */
+export function tradesInStrip(p: Portfolio, key: string): Trade[] {
+  return p.trades.filter((t) => stripKeyOf(t) === key).sort((a, b) => a.expiry.getTime() - b.expiry.getTime())
 }
 
 /** Total credit split into "in use" vs headroom, if a limit is supplied. */
