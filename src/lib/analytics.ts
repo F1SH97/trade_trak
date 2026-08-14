@@ -221,6 +221,8 @@ export function upcomingTriggers(p: Portfolio, limit = 8): TriggerEvent[] {
 /** How a trigger is observed: within a window, only at expiry, or continuously. */
 function observationOf(t: Trade, legStart: Date | null, legEnd: Date | null): TriggerObservation {
   const n = t.product.toLowerCase()
+  // European TARF barriers are observed only at expiry (scoped to TARFs for now).
+  if (t.category === 'TARF' && /european/.test(n)) return 'expiry'
   if (/window/.test(n) || (legStart && legEnd)) return 'window'
   if (/expiry/.test(n)) return 'expiry'
   return 'lifetime'
