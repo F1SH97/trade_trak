@@ -64,6 +64,7 @@ export function Overview() {
 
   const { kpis, products, makeup, rates, triggers, next, series, credit } = model
   const multiPair = rates.length > 1
+  const hasLeverage = portfolio.trades.some((t) => t.leveraged)
   const palette = categorical(mode)
 
   return (
@@ -105,12 +106,14 @@ export function Overview() {
           sub={`${pct(kpis.currentObligation / (kpis.totalProtection || 1), 0)} of protection`}
           accent={palette[2]}
         />
-        <KpiTile
-          label="Max potential"
-          value={usdCompact(kpis.maxObligation)}
-          sub={`+${usdCompact(kpis.potentialObligation)} if leveraged`}
-          accent={palette[1]}
-        />
+        {hasLeverage && (
+          <KpiTile
+            label="Max potential"
+            value={usdCompact(kpis.maxObligation)}
+            sub={`+${usdCompact(kpis.potentialObligation)} if leveraged`}
+            accent={palette[1]}
+          />
+        )}
         {rates.map((r) => (
           <KpiTile
             key={r.pair}
