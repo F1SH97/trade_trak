@@ -130,7 +130,7 @@ export function Overview() {
         </Card>
 
         <Card>
-          <CardHeader title="Product make-up" subtitle="Share of protection by product" />
+          <CardHeader title="Product make-up" subtitle="Share of protection by category" />
           <ProductDonut data={products} mode={mode} />
         </Card>
       </div>
