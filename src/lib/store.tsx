@@ -5,7 +5,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { parsePaste } from './parse'
+import { classifyProduct, parsePaste } from './parse'
 import { SAMPLE_PASTE } from '../data/samplePaste'
 import type { Portfolio } from './types'
 
@@ -32,6 +32,10 @@ function reviveDates(p: Portfolio): Portfolio {
     monthly: p.monthly.map((m) => ({ ...m, month: new Date(m.month) })),
     trades: p.trades.map((t) => ({
       ...t,
+      // Re-derive the product classification from the source description on
+      // every load. This upgrades books cached before these fields (or the
+      // current rules) existed, so category colours / labels never go stale.
+      ...classifyProduct(t.product ?? ''),
       expiry: new Date(t.expiry),
       windowStart: d(t.windowStart),
       windowEnd: d(t.windowEnd),
