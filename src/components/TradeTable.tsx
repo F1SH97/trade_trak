@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { Trade } from '../lib/types'
 import { fmtDay, rate, relativeDays, usd } from '../lib/format'
-import { CATEGORY_LABEL, CATEGORY_PILL } from '../lib/products'
+import { CATEGORY_LABEL } from '../lib/products'
+import { categoryColor } from '../theme'
 import { startOfDay } from '../lib/format'
 
 type SortKey = 'expiry' | 'protection' | 'maxObligation' | 'credit'
@@ -90,7 +91,8 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
                 <td className="px-3 py-2">
                   <div className="flex flex-wrap items-center gap-1.5" title={t.product}>
                     <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${CATEGORY_PILL[t.category]}`}
+                      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
+                      style={{ backgroundColor: categoryColor(t.category) }}
                     >
                       {productName(t.product)}
                     </span>

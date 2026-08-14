@@ -38,18 +38,20 @@ export function categorical(mode: Mode): string[] {
   return CATEGORICAL[mode]
 }
 
-// Concrete chart hues per product category — matched to the Tailwind pill
-// colours in lib/products.ts. Positive / neutral hues only (no red or amber).
-const CATEGORY_HUE: Record<string, Record<Mode, string>> = {
-  Forward: { light: '#2a78d6', dark: '#3987e5' },
-  Option: { light: '#4a3aa7', dark: '#9085e9' },
-  TARF: { light: '#0f9d78', dark: '#14b892' },
-  NDF: { light: '#d6538a', dark: '#d55181' },
-  Other: { light: '#8794a1', dark: '#748896' },
+// Concrete, vivid hue per product category — one identity colour used for the
+// pill fill, the donut slice, the credit bar and every legend, so a category
+// always looks the same. Chosen for white-text contrast and to avoid any red /
+// amber (colour never implies risk). Deliberately mode-independent.
+const CATEGORY_HUE: Record<string, string> = {
+  Forward: '#1f6fd0', // blue
+  Option: '#4f46e5', // indigo
+  TARF: '#0f766e', // teal
+  NDF: '#be3d7a', // magenta-pink
+  Other: '#475569', // slate
 }
 
-export function categoryColor(category: string, mode: Mode): string {
-  return (CATEGORY_HUE[category] ?? CATEGORY_HUE.Other)[mode]
+export function categoryColor(category: string, _mode?: Mode): string {
+  return CATEGORY_HUE[category] ?? CATEGORY_HUE.Other
 }
 
 /** Chart surface / axis / grid / ink tokens, matched to index.css. */
