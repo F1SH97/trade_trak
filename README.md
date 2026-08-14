@@ -12,7 +12,7 @@ direct feed from the back-end systems.
    product make-up, credit utilisation, the next expiry, the next barrier triggers
    (adverse ones flagged), and a sortable hedge ledger.
 2. **Analysis** — an interactive scenario tool. Drag the market (spot rate) and watch every
-   hedge respond: which barriers break, how obligations gear up, what rate each hedge
+   hedge respond: which barriers break, how obligations leverage up, what rate each hedge
    transacts at, and what it is worth in AUD — with a payoff curve, a barrier map and a
    per-hedge breakdown. Toggle your position (selling / buying USD) and whether the rate
    applies at expiry, during a window, or through the whole trade.

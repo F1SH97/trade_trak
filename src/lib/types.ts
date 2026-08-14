@@ -26,6 +26,7 @@ export type ProductFamily =
   | 'Vanilla Option'
   | 'Participating Forward'
   | 'Knock-In'
+  | 'Knock-In Improver'
   | 'Knock-Out'
   | 'TARF'
   | 'Other'

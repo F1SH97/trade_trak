@@ -95,7 +95,7 @@ export function Overview() {
         <KpiTile
           label="Max potential"
           value={usdCompact(kpis.maxObligation)}
-          sub={`+${usdCompact(kpis.potentialObligation)} if geared`}
+          sub={`+${usdCompact(kpis.potentialObligation)} if leveraged`}
           accent={palette[1]}
         />
         <KpiTile label="Avg protection rate" value={rate(kpis.weightedRate)} sub={`${kpis.pair} · notional-weighted`} accent={palette[6]} />
@@ -108,7 +108,7 @@ export function Overview() {
         <Card className="lg:col-span-2">
           <CardHeader
             title="Protection & obligation over time"
-            subtitle="Cover in place against current and worst-case (geared) obligation, by month"
+            subtitle="Cover in place against current and worst-case (leveraged) obligation, by month"
             right={
               <div className="hidden items-center gap-3 text-[11px] text-ink-muted sm:flex">
                 <Legend color={palette[0]} label="Protection" />

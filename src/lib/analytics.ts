@@ -148,10 +148,10 @@ function classifyBarrier(
   if (fam === 'Knock-Out') {
     return { adverse: true, note: `Protection knocks out if ${t.ccy} trades through ${level.toFixed(4)}.` }
   }
-  if (fam === 'Knock-In') {
-    // The lower of the two barriers on an improver is the gearing knock-in.
+  if (fam === 'Knock-In' || fam === 'Knock-In Improver') {
+    // The lower of the two barriers on an improver is the leverage knock-in.
     if (ps != null && Math.abs(level - ps) < 1e-6) {
-      return { adverse: true, note: `Geared obligation knocks in at ${level.toFixed(4)}.` }
+      return { adverse: true, note: `Leveraged obligation knocks in at ${level.toFixed(4)}.` }
     }
     return { adverse: false, note: `Improver / upside condition at ${level.toFixed(4)} — a positive if reached.` }
   }

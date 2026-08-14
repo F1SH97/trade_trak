@@ -10,9 +10,9 @@
  * It is meant for intuition, not settlement. Product mechanics are inferred:
  *   • Forward / FEC ....... unconditional; transacts at the protection strike.
  *   • Knock-Out ........... protection disappears if spot trades through the barrier.
- *   • Knock-In (geared) ... obligation gears up to the max if the lower barrier breaks;
+ *   • Knock-In (leveraged) obligation leverages up to the max if the lower barrier breaks;
  *                            the upper barrier is an improver (a positive).
- *   • TARF ................ geared obligation engages below the strike.
+ *   • TARF ................ leveraged obligation engages below the strike.
  * Assumptions are surfaced in the UI so a user can sanity-check them.
  */
 
@@ -24,7 +24,7 @@ export type Observation = 'expiry' | 'window' | 'duration'
 export type ScenarioStatus =
   | 'committed' // forward — must transact at strike
   | 'protected' // protection engaged as intended
-  | 'geared' // leverage triggered — obligation increased (adverse)
+  | 'geared' // leverage triggered — obligation increased (adverse); displayed as "Leveraged"
   | 'knocked-out' // protection lost (adverse)
   | 'improved' // upside condition met (positive)
   | 'inactive' // expired / no data
@@ -74,7 +74,7 @@ function statusText(s: ScenarioStatus): string {
   switch (s) {
     case 'committed': return 'Committed'
     case 'protected': return 'Protected'
-    case 'geared': return 'Geared up'
+    case 'geared': return 'Leveraged up'
     case 'knocked-out': return 'Knocked out'
     case 'improved': return 'Improved'
     default: return 'Inactive'
@@ -126,12 +126,13 @@ export function evaluateTrade(t: Trade, spot: number, perspective: Perspective):
       break
     }
 
-    case 'Knock-In': {
-      const lower = t.trigger ?? strike ?? null // gearing knock-in
+    case 'Knock-In':
+    case 'Knock-In Improver': {
+      const lower = t.trigger ?? strike ?? null // leverage knock-in
       const upper = t.trigger2 ?? null // improver
       const geared = lower != null && spot <= lower + EPS
       const improved = upper != null && spot >= upper - EPS
-      addBarrier(lower, 'trigger', 'Gearing knock-in', true, geared)
+      addBarrier(lower, 'trigger', 'Leverage knock-in', true, geared)
       addBarrier(upper, 'trigger2', 'Improver barrier', false, improved)
       if (geared) {
         status = 'geared'

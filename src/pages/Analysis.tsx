@@ -28,7 +28,7 @@ const OBSERVATIONS: { key: Observation; label: string; hint: string }[] = [
 const statusTone: Record<ScenarioStatus, { bg: string; label: string }> = {
   committed: { bg: STATUS.warning, label: 'Committed' },
   protected: { bg: STATUS.good, label: 'Protected' },
-  geared: { bg: STATUS.critical, label: 'Geared up' },
+  geared: { bg: STATUS.critical, label: 'Leveraged up' },
   'knocked-out': { bg: STATUS.critical, label: 'Knocked out' },
   improved: { bg: STATUS.good, label: 'Improved' },
   inactive: { bg: '#94a3b8', label: 'Inactive' },
@@ -77,7 +77,7 @@ export function Analysis() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Analysis · Market scenarios</h1>
         <p className="mt-0.5 text-sm text-ink-soft">
-          Move {portfolio.pair} and see how every hedge responds — which barriers break, how obligations gear, and what
+          Move {portfolio.pair} and see how every hedge responds — which barriers break, how obligations leverage, and what
           each rate is worth.
         </p>
       </div>
@@ -204,8 +204,8 @@ export function Analysis() {
         <ul className="list-inside list-disc space-y-1 text-xs text-ink-soft">
           <li>Forwards / FECs are unconditional and transact at the protection strike.</li>
           <li>Knock-outs lose protection if spot trades through the barrier; the notional is then shown as exposed.</li>
-          <li>Leveraged knock-ins gear the obligation to the max when the lower barrier breaks; the upper barrier is treated as an improver (a positive).</li>
-          <li>TARFs gear below the strike; target-accrual redemption is not path-simulated.</li>
+          <li>Leveraged knock-ins leverage the obligation to the max when the lower barrier breaks; the upper barrier is treated as an improver (a positive).</li>
+          <li>TARFs leverage below the strike; target-accrual redemption is not path-simulated.</li>
           <li>AUD figures convert USD at <code className="rounded bg-surface-sunken px-1">AUD = USD ÷ rate</code>. This is a first-order intuition tool, not a settlement or valuation model.</li>
         </ul>
       </Card>

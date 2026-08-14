@@ -163,6 +163,7 @@ export function classifyProduct(desc: string): { family: ProductFamily; leverage
   const leveraged = /leverag|geared|tarf|target|ratio/.test(d)
   let family: ProductFamily = 'Other'
   if (/tarf|target accrual/.test(d)) family = 'TARF'
+  else if (/improver/.test(d)) family = 'Knock-In Improver'
   else if (/knock ?in|knock-in/.test(d)) family = 'Knock-In'
   else if (/knock ?out|knock-out/.test(d)) family = 'Knock-Out'
   else if (/participat/.test(d)) family = 'Participating Forward'
