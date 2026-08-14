@@ -176,15 +176,16 @@ export function classifyProduct(desc: string): {
   else if (/\bfec\b|forward|outright/.test(d)) family = 'Forward'
   else if (/call|put|vanilla|collar|option/.test(d)) family = 'Vanilla Option'
 
-  // Top-level category — the four buckets the ledger rolls up into. NDF is
-  // checked before Forward (its name contains "forward"), and Option before
-  // Forward (a participating forward is an option structure).
-  let category: ProductCategory = 'Other'
-  if (/\bndf\b|non.?deliverable/.test(d)) category = 'NDF'
-  else if (/tarf|target accrual/.test(d)) category = 'TARF'
-  else if (/knock|improver|option|collar|participat|vanilla|call|put|barrier|digital|seagull/.test(d))
-    category = 'Option'
-  else if (/\bfec\b|forward|outright/.test(d)) category = 'Forward'
+  // Top-level category — the four Convera buckets. Only three are named
+  // explicitly; Option is the catch-all for everything else:
+  //   • TARF    — any product with "tarf" in the name.
+  //   • NDF     — non-deliverable forwards only.
+  //   • Forward — FEC and synthetic FEC only (nothing else).
+  //   • Option  — anything that is none of the above.
+  let category: ProductCategory = 'Option'
+  if (/tarf/.test(d)) category = 'TARF'
+  else if (/\bndf\b|non.?deliverable/.test(d)) category = 'NDF'
+  else if (/\bfec\b|synthetic\s+(?:fec|forward)/.test(d)) category = 'Forward'
 
   return { family, category, leveraged }
 }
