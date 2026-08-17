@@ -76,12 +76,32 @@ export function classify(t: Trade): Classification {
   return 'Protect'
 }
 
-/** Whether a trade's numeric triggers act as knock-ins, knock-outs or a TARF target. */
-export function barrierRole(t: Trade): BarrierRole {
+/** True for structures carrying BOTH a knock-out and a knock-in barrier. */
+function isDualBarrier(t: Trade): boolean {
+  const d = t.product.toLowerCase()
+  return /improver|kiko|dynamic/.test(d) || (/knock ?in/.test(d) && /knock ?out/.test(d))
+}
+
+/**
+ * The role of a *specific* barrier level.
+ *
+ * On a dual-barrier structure (Knock-In Improver, KIKO, Dynamic) the level on
+ * the unfavourable side of the protection rate is the knock-out and the level
+ * on the favourable side is the knock-in — for an LHS trade, below P is the
+ * knock-out and above P is the knock-in (RHS mirrors). Single-barrier products
+ * take their role from the product name.
+ */
+export function roleForLevel(t: Trade, level: number): BarrierRole {
   const d = t.product.toLowerCase()
   if (/tarf|target/.test(d)) return 'target'
+  if (isDualBarrier(t)) {
+    const p = t.protectionStrike ?? level
+    const aboveP = level > p + EPS
+    const isKnockOut = sideOf(t) === 'LHS' ? !aboveP : aboveP
+    return isKnockOut ? 'knock-out' : 'knock-in'
+  }
   if (/knock ?out|knock-out/.test(d)) return 'knock-out'
-  return 'knock-in' // knock-in, improver, participating knock-in, KIKO in-leg…
+  return 'knock-in' // knock-in, participating knock-in, single-barrier in-leg…
 }
 
 export interface BarrierVerdict {
@@ -102,7 +122,7 @@ export interface BarrierVerdict {
 export function classifyBarrier(t: Trade, level: number, spot: number): BarrierVerdict {
   const side = sideOf(t)
   const p = t.protectionStrike ?? level
-  const role = barrierRole(t)
+  const role = roleForLevel(t, level)
   // A barrier is "breached" once spot is beyond it on the far side from P.
   const aboveP = level > p + EPS
   const breached = aboveP ? spot >= level - EPS : spot <= level + EPS
