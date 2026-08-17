@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { rate, usdCompact } from '../../lib/format'
+import { rate, fxCompact, usdCompact } from '../../lib/format'
 import { categorical, chartTokens, STATUS, type Mode } from '../../theme'
 import { TooltipCard, axisProps } from './common'
 
@@ -18,18 +18,21 @@ interface PayoffPoint {
   obligationUSD: number
 }
 
-/** Hedge benefit (AUD) across a range of spot rates, with the live spot and
- *  key barrier levels marked. Answers "what does this rate mean for me?". */
+/** Structure value (foreign ccy) vs a forward at protection, across a range of
+ *  spot rates, with the live spot and key barrier levels marked. The value is
+ *  drawn with straight segments so a knock-in shows its sharp drop back to zero. */
 export function PayoffChart({
   data,
   spot,
   barriers,
   mode,
+  ccy = 'AUD',
 }: {
   data: PayoffPoint[]
   spot: number
   barriers: { level: number; adverse: boolean }[]
   mode: Mode
+  ccy?: string
 }) {
   const [blue] = categorical(mode)
   const t = chartTokens(mode)
@@ -52,7 +55,7 @@ export function PayoffChart({
             tickFormatter={(v) => rate(v as number)}
             {...axisProps(mode)}
           />
-          <YAxis tickFormatter={(v) => usdCompact(v as number)} width={54} {...axisProps(mode)} />
+          <YAxis tickFormatter={(v) => fxCompact(v as number, ccy)} width={54} {...axisProps(mode)} />
           <ReferenceLine y={0} stroke={t.axis} strokeWidth={1} />
           {barriers.map((b, i) => (
             <ReferenceLine
@@ -71,14 +74,14 @@ export function PayoffChart({
                 <TooltipCard
                   title={`Spot ${rate(payload[0]?.payload.spot)}`}
                   rows={[
-                    { label: 'Hedge benefit', value: `${usdCompact(payload[0]?.payload.benefitAUD)} AUD`, color: blue },
+                    { label: 'Structure value', value: `${fxCompact(payload[0]?.payload.benefitAUD, ccy)} ${ccy}`, color: blue },
                     { label: 'Obligation', value: `${usdCompact(payload[0]?.payload.obligationUSD)} USD` },
                   ]}
                 />
               ) : null
             }
           />
-          <Area type="monotone" dataKey="benefitAUD" stroke={blue} strokeWidth={2} fill="url(#benefitFill)" dot={false} />
+          <Area type="linear" dataKey="benefitAUD" stroke={blue} strokeWidth={2} fill="url(#benefitFill)" dot={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

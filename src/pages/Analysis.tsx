@@ -13,7 +13,7 @@ import {
   type ScenarioStatus,
   type TradeScenario,
 } from '../lib/scenario'
-import { fmtDay, rate, usd, usdCompact } from '../lib/format'
+import { fmtDay, fxCompact, rate, usd, usdCompact } from '../lib/format'
 import { Card, CardHeader, Empty, Badge } from '../components/ui'
 import { KpiTile } from '../components/KpiTile'
 import { PayoffChart } from '../components/charts/PayoffChart'
@@ -182,12 +182,17 @@ export function Analysis() {
       {/* Scenario KPIs */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile
-          label="Net hedge benefit"
-          value={`${scenario.totalBenefitAUD >= 0 ? '+' : ''}${usdCompact(scenario.totalBenefitAUD)}`}
-          sub="AUD vs transacting at this spot"
+          label="Net structure value"
+          value={`${scenario.totalBenefitAUD >= 0 ? '+' : ''}${fxCompact(scenario.totalBenefitAUD, scenario.foreignCcy)}`}
+          sub={`${scenario.foreignCcy} vs a forward at protection`}
           accent={scenario.totalBenefitAUD >= 0 ? STATUS.good : STATUS.critical}
         />
-        <KpiTile label="Total obligation" value={usdCompact(scenario.totalObligationUSD)} sub="USD at this spot" accent={palette[1]} />
+        <KpiTile
+          label="Total obligation"
+          value={fxCompact(scenario.totalObligationForeign, scenario.foreignCcy)}
+          sub={`${scenario.foreignCcy} · ${usdCompact(scenario.totalObligationUSD)} USD`}
+          accent={palette[1]}
+        />
         <KpiTile
           label="Adverse hedges"
           value={String(scenario.adverseCount)}
@@ -202,22 +207,22 @@ export function Analysis() {
         />
       </div>
 
-      {/* Payoff + barrier map */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader
-            title="Portfolio payoff across the market"
-            subtitle="Hedge benefit (AUD) as spot moves — dashed lines mark barriers, solid line the scenario spot"
-          />
-          <PayoffChart data={curve} spot={spot} barriers={barrierLines} mode={mode} />
-        </Card>
-        <Card>
-          <CardHeader title="Barrier map" subtitle="Where each barrier sits vs the scenario spot" />
-          <div className="pt-2">
-            <BarrierMap scenarios={scenario.rows} spot={spot} min={bounds.min} max={bounds.max} mode={mode} />
-          </div>
-        </Card>
-      </div>
+      {/* Payoff */}
+      <Card>
+        <CardHeader
+          title="Portfolio payoff across the market"
+          subtitle={`Structure value (${scenario.foreignCcy}) vs a forward at protection — dashed lines mark barriers, solid line the scenario spot`}
+        />
+        <PayoffChart data={curve} spot={spot} barriers={barrierLines} mode={mode} ccy={scenario.foreignCcy} />
+      </Card>
+
+      {/* Barrier map */}
+      <Card>
+        <CardHeader title="Barrier map" subtitle="Protection rate and every barrier for the selected expiry" />
+        <div className="pt-2">
+          <BarrierMap scenarios={scenario.rows} spot={spot} mode={mode} />
+        </div>
+      </Card>
 
       {/* Per-trade scenario table */}
       <Card>
@@ -225,7 +230,7 @@ export function Analysis() {
           title="Per-hedge outcome at this spot"
           subtitle={`Evaluated at ${rate(spot)} · ${perspective === 'sellUSD' ? 'selling USD' : 'buying USD'}`}
         />
-        <ScenarioTable rows={scenario.rows} />
+        <ScenarioTable rows={scenario.rows} ccy={scenario.foreignCcy} />
       </Card>
 
       {/* Assumptions */}
@@ -236,7 +241,8 @@ export function Analysis() {
           <li><strong>Knock-ins</strong> on the favourable side are bad triggers — if reached, participation is lost and you transact at the protection rate. Inverted knock-ins obligate at the enhanced rate instead.</li>
           <li><strong>Knock-outs</strong> lose cover if breached (shown as exposed); convertible knock-outs are good triggers — the structure becomes a vanilla with full protection and upside.</li>
           <li>Enhanced / leveraged products (knock-outs, TARFs) gear the obligation to the max on a favourable move; TARF target-accrual redemption is not path-simulated.</li>
-          <li>AUD figures convert USD at <code className="rounded bg-surface-sunken px-1">AUD = USD ÷ rate</code>. This is a first-order intuition tool, not a settlement or valuation model.</li>
+          <li><strong>Structure value</strong> is measured against a plain forward at the protection rate: transacting at protection is the zero line, so a knock-in improver draws a shark-fin (value falls back to zero when it knocks in) and a collar plateaus at its participation cap.</li>
+          <li>Foreign-currency figures convert USD at <code className="rounded bg-surface-sunken px-1">{scenario.foreignCcy} = USD ÷ rate</code>. This is a first-order intuition tool, not a settlement or valuation model.</li>
         </ul>
       </Card>
     </div>
@@ -269,7 +275,7 @@ function SegToggle({
   )
 }
 
-function ScenarioTable({ rows }: { rows: TradeScenario[] }) {
+function ScenarioTable({ rows, ccy }: { rows: TradeScenario[]; ccy: string }) {
   return (
     <div className="overflow-x-auto scroll-thin">
       <table className="w-full min-w-[760px] border-collapse text-xs">
@@ -281,7 +287,7 @@ function ScenarioTable({ rows }: { rows: TradeScenario[] }) {
             <th className="px-3 py-2 text-right font-semibold">Obligation</th>
             <th className="px-3 py-2 text-right font-semibold">Eff. rate</th>
             <th className="px-3 py-2 text-right font-semibold">Nearest barrier</th>
-            <th className="px-3 py-2 text-right font-semibold">Benefit (AUD)</th>
+            <th className="px-3 py-2 text-right font-semibold">Value ({ccy})</th>
           </tr>
         </thead>
         <tbody>
@@ -315,7 +321,7 @@ function ScenarioTable({ rows }: { rows: TradeScenario[] }) {
                   )}
                 </td>
                 <td className={`tnum whitespace-nowrap px-3 py-2 text-right font-medium ${r.benefitAUD >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`}>
-                  {r.benefitAUD >= 0 ? '+' : ''}{usdCompact(r.benefitAUD)}
+                  {r.benefitAUD >= 0 ? '+' : ''}{fxCompact(r.benefitAUD, ccy)}
                 </td>
               </tr>
             )

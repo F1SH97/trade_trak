@@ -28,6 +28,17 @@ export function num(n: number | null | undefined): string {
   return NUM0.format(n)
 }
 
+/** Compact amount in a named currency: "A$1.2M", "A$640k". */
+export function fxCompact(n: number | null | undefined, ccy: string): string {
+  if (n == null || Number.isNaN(n)) return '—'
+  const abs = Math.abs(n)
+  const sign = n < 0 ? '-' : ''
+  const sym = ccy === 'AUD' ? 'A$' : ccy === 'USD' ? '$' : `${ccy} `
+  if (abs >= 1_000_000) return `${sign}${sym}${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}M`
+  if (abs >= 1_000) return `${sign}${sym}${(abs / 1_000).toFixed(0)}k`
+  return `${sign}${sym}${NUM0.format(abs)}`
+}
+
 /** FX rate, 4 dp — the convention in the source tool. */
 export function rate(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return '—'

@@ -55,8 +55,17 @@ export interface TradeScenario {
   barriers: Barrier[]
   hedgedAUD: number
   marketAUD: number
-  /** Signed AUD benefit vs transacting at market, per the chosen perspective. */
+  /**
+   * Signed benefit, in the FOREIGN (non-USD) currency, of the effective rate
+   * versus a plain forward at the protection rate. Zero when transacting at the
+   * protection rate (committed / obligated), positive when the structure's
+   * optionality wins a better rate, negative when protection is lost to the
+   * market. This is what makes a knock-in improver draw a shark-fin (value drops
+   * back to zero on knock-in) and a collar plateau (held at its participation cap).
+   */
   benefitAUD: number
+  /** Obligation notional expressed in the foreign (non-USD) currency. */
+  obligationForeign: number
   /** USD left exposed to the market (protection lost / not engaged). */
   exposedUSD: number
 }
@@ -67,6 +76,10 @@ export interface PortfolioScenario {
   observation: Observation
   rows: TradeScenario[]
   totalObligationUSD: number
+  /** Total obligation notional in the foreign (non-USD) currency. */
+  totalObligationForeign: number
+  /** The foreign (non-USD) currency code of the book, e.g. "AUD". */
+  foreignCcy: string
   totalBenefitAUD: number
   totalExposedUSD: number
   adverseCount: number
@@ -189,12 +202,28 @@ export function evaluateTrade(t: Trade, spot: number, perspective: Perspective):
 
   const adverse = status === 'geared' || status === 'knocked-out' || status === 'obligated'
 
-  // AUD conversion. AUD/USD is USD-per-AUD, so AUD = USD / rate.
+  // Foreign-currency conversion. The pair is quoted USD-per-foreign (e.g. AUD/USD
+  // ≈ 0.65 USD per AUD), so a USD notional is worth USD / rate in the foreign ccy.
   const hedgedAUD = effectiveRate ? obligationUSD / effectiveRate : obligationUSD / spot
   const marketAUD = obligationUSD / spot
+  const obligationForeign = hedgedAUD
+
+  // Benefit is the value of the effective rate measured against the protection
+  // rate (a plain forward at P is the zero line). When protection is knocked out
+  // the client is left transacting at the market, so the market rate is used.
+  // Signed so a better-than-protection rate reads positive on the product's
+  // favourable side; the perspective toggle mirrors it.
+  const notionalUSD = obligationUSD > 0 ? obligationUSD : exposedUSD
+  const valueRate = effectiveRate ?? spot
   let benefitAUD = 0
-  if (effectiveRate) {
-    benefitAUD = perspective === 'sellUSD' ? hedgedAUD - marketAUD : marketAUD - hedgedAUD
+  if (strike && valueRate && notionalUSD > 0) {
+    const magnitude = Math.abs(notionalUSD / valueRate - notionalUSD / strike)
+    const signed = isFavourable(side, valueRate, strike)
+      ? magnitude
+      : isFavourable(side, strike, valueRate)
+        ? -magnitude
+        : 0
+    benefitAUD = (perspective === 'sellUSD' ? 1 : -1) * signed
   }
 
   return {
@@ -208,6 +237,7 @@ export function evaluateTrade(t: Trade, spot: number, perspective: Perspective):
     hedgedAUD,
     marketAUD,
     benefitAUD,
+    obligationForeign,
     exposedUSD,
   }
 }
@@ -229,10 +259,18 @@ export function evaluatePortfolio(
     observation,
     rows,
     totalObligationUSD: rows.reduce((s, r) => s + r.obligationUSD, 0),
+    totalObligationForeign: rows.reduce((s, r) => s + r.obligationForeign, 0),
+    foreignCcy: foreignCcyOf(p.pair),
     totalBenefitAUD: rows.reduce((s, r) => s + r.benefitAUD, 0),
     totalExposedUSD: rows.reduce((s, r) => s + r.exposedUSD, 0),
     adverseCount: rows.filter((r) => r.adverse).length,
   }
+}
+
+/** The non-USD side of a pair like "AUD/USD" → "AUD" (falls back to the pair). */
+export function foreignCcyOf(pair: string): string {
+  const parts = pair.split(/[/\s]+/).filter(Boolean)
+  return parts.find((c) => c.toUpperCase() !== 'USD') ?? parts[0] ?? 'FX'
 }
 
 /** Sample the portfolio outcome across a spot range for the payoff chart. */
