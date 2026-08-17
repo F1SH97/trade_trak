@@ -27,18 +27,21 @@ export function PayoffChart({
   barriers,
   mode,
   ccy = 'AUD',
+  heightClass = 'h-72',
 }: {
   data: PayoffPoint[]
   spot: number
   barriers: { level: number; adverse: boolean }[]
   mode: Mode
   ccy?: string
+  /** Tailwind height utility for the chart wrapper — shrink it for nested per-pair cards. */
+  heightClass?: string
 }) {
   const [blue] = categorical(mode)
   const t = chartTokens(mode)
 
   return (
-    <div className="h-72 w-full">
+    <div className={`${heightClass} w-full`}>
       <ResponsiveContainer>
         <ComposedChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 8 }}>
           <defs>
