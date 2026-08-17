@@ -85,15 +85,20 @@ function isDualBarrier(t: Trade): boolean {
 /**
  * The role of a *specific* barrier level.
  *
- * On a dual-barrier structure (Knock-In Improver, KIKO, Dynamic) the level on
- * the unfavourable side of the protection rate is the knock-out and the level
- * on the favourable side is the knock-in — for an LHS trade, below P is the
- * knock-out and above P is the knock-in (RHS mirrors). Single-barrier products
- * take their role from the product name.
+ *  • Knock-In Improver — carries TWO knock-in barriers (both bad triggers),
+ *    identical on LHS and RHS: a lower KI at/below the protection rate and an
+ *    upper KI at/above it. If spot trades through either during the observation
+ *    period the contract is obligated at the protection rate; between them the
+ *    client keeps the improved participation.
+ *  • KIKO / Dynamic — a genuine knock-out on the unfavourable side of P and a
+ *    knock-in on the favourable side (for an LHS trade, below P is the knock-out
+ *    and above P is the knock-in; RHS mirrors).
+ *  • Single-barrier products take their role from the product name.
  */
 export function roleForLevel(t: Trade, level: number): BarrierRole {
   const d = t.product.toLowerCase()
   if (/tarf|target/.test(d)) return 'target'
+  if (isImprover(t)) return 'knock-in' // both barriers are knock-ins
   if (isDualBarrier(t)) {
     const p = t.protectionStrike ?? level
     const aboveP = level > p + EPS
@@ -141,8 +146,13 @@ export function classifyBarrier(t: Trade, level: number, spot: number): BarrierV
   // Knock-in. Standard KI sits on the favourable side of P and is a bad trigger
   // (kills participation → obligated at P). An inverted KI sits on the far side
   // and obligates at the enhanced rate — not adverse.
+  //
+  // The Improver is the exception: BOTH its knock-ins are bad triggers — the
+  // lower one (at/below P, breaching downward) and the upper one (at/above P,
+  // breaching upward) each obligate the contract at the protection rate — so
+  // the far-side barrier is not treated as an inverted (benign) knock-in.
   const onFavourableSide = side === 'LHS' ? aboveP : !aboveP
-  const inverted = isInverted(t) || !onFavourableSide
+  const inverted = !isImprover(t) && (isInverted(t) || !onFavourableSide)
   if (inverted) {
     return { adverse: false, breached, role, label: 'Inverted knock-in' }
   }
