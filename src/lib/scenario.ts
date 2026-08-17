@@ -17,16 +17,20 @@
  */
 
 import type { Portfolio, Trade } from './types'
+import { classify, classifyBarrier, isFavourable, sideOf } from './knowledge'
 
 export type Perspective = 'sellUSD' | 'buyUSD'
 export type Observation = 'expiry' | 'window' | 'duration'
 
 export type ScenarioStatus =
-  | 'committed' // forward — must transact at strike
-  | 'protected' // protection engaged as intended
-  | 'geared' // leverage triggered — obligation increased (adverse); displayed as "Leveraged"
-  | 'knocked-out' // protection lost (adverse)
-  | 'improved' // upside condition met (positive)
+  | 'committed' // forward / NDF — must transact at the rate
+  | 'protected' // protection engaged as intended (spot unfavourable)
+  | 'participating' // participating in a favourable move (transacts near spot)
+  | 'capped' // favourable move, but obligated at the participation / enhanced cap
+  | 'obligated' // knock-in hit — participation lost, obligated at protection rate (adverse)
+  | 'geared' // enhanced/leveraged obligation engaged (adverse); displayed as "Leveraged"
+  | 'knocked-out' // protection knocked out (adverse)
+  | 'improved' // protection rate improved (positive)
   | 'inactive' // expired / no data
 
 export interface Barrier {
@@ -68,12 +72,13 @@ export interface PortfolioScenario {
   adverseCount: number
 }
 
-const EPS = 1e-6
-
 function statusText(s: ScenarioStatus): string {
   switch (s) {
     case 'committed': return 'Committed'
     case 'protected': return 'Protected'
+    case 'participating': return 'Participating'
+    case 'capped': return 'Capped at rate'
+    case 'obligated': return 'Obligated at protection'
     case 'geared': return 'Leveraged up'
     case 'knocked-out': return 'Knocked out'
     case 'improved': return 'Improved'
@@ -82,96 +87,107 @@ function statusText(s: ScenarioStatus): string {
 }
 
 export function evaluateTrade(t: Trade, spot: number, perspective: Perspective): TradeScenario {
-  const strike = t.protectionStrike
+  const strike = t.protectionStrike // Protection / Enhanced Rate
+  const side = sideOf(t)
+  const cls = classify(t)
+  const fam = t.family
   let status: ScenarioStatus = 'protected'
   let obligationUSD = t.protection
   let effectiveRate: number | null = strike
   let exposedUSD = 0
   const barriers: Barrier[] = []
 
-  const addBarrier = (level: number | null, kind: 'trigger' | 'trigger2', label: string, adverse: boolean, breached: boolean) => {
-    if (level == null) return
+  // Classify every barrier via the shared Rules-of-Barriers logic.
+  for (const [level, kind] of [
+    [t.trigger, 'trigger'],
+    [t.trigger2, 'trigger2'],
+  ] as const) {
+    if (level == null) continue
+    const v = classifyBarrier(t, level, spot)
     barriers.push({
       level,
       kind,
-      label,
-      breached,
+      label: v.label,
+      breached: v.breached,
       distance: spot - level,
       distancePct: Math.abs(spot - level) / level,
-      adverse,
+      adverse: v.adverse,
     })
   }
 
-  switch (t.family) {
-    case 'Forward':
-      status = 'committed'
+  const favourable = strike != null && isFavourable(side, spot, strike)
+  const badHit = barriers.some((b) => b.adverse && b.breached)
+  const koConvertibleHit = barriers.some((b) => !b.adverse && b.breached && /knock-out/.test(b.label))
+  const participation = t.participationStrike // Participation / cap rate
+  const beyondCap = participation != null && isFavourable(side, spot, participation)
+
+  const isForward = fam === 'Forward' || /\bfec\b|\bndf\b|synthetic|outright/.test(t.product.toLowerCase())
+
+  if (isForward) {
+    // FEC / NDF / synthetic FEC — unconditional obligation at the rate.
+    status = 'committed'
+    obligationUSD = t.protection
+    effectiveRate = strike
+  } else if (koConvertibleHit) {
+    // Convertible knock-out fired → becomes a vanilla: full protection + upside.
+    status = favourable ? 'participating' : 'protected'
+    obligationUSD = t.protection
+    effectiveRate = favourable ? spot : strike
+  } else if (fam === 'Knock-Out') {
+    if (badHit) {
+      status = 'knocked-out'
+      obligationUSD = 0
+      effectiveRate = null
+      exposedUSD = t.protection
+    } else if (favourable) {
+      // Enhanced rate holds; a favourable move obligates at the enhanced rate,
+      // geared up when the structure is leveraged.
+      status = t.leveraged ? 'geared' : 'capped'
+      obligationUSD = t.leveraged ? t.maxObligation || t.protection * 2 : t.protection
+      effectiveRate = strike
+    } else {
+      status = 'protected'
       obligationUSD = t.protection
       effectiveRate = strike
-      break
-
-    case 'Knock-Out': {
-      const barrier = t.trigger ?? null
-      const knockedOut = barrier != null && spot <= barrier + EPS
-      addBarrier(barrier, 'trigger', 'Knock-out barrier', true, knockedOut)
-      if (knockedOut) {
-        status = 'knocked-out'
-        obligationUSD = 0
-        effectiveRate = null
-        exposedUSD = t.protection
-      } else {
-        status = 'protected'
-        obligationUSD = t.protection
-        effectiveRate = strike
-      }
-      break
     }
-
-    case 'Knock-In':
-    case 'Knock-In Improver': {
-      const lower = t.trigger ?? strike ?? null // leverage knock-in
-      const upper = t.trigger2 ?? null // improver
-      const geared = lower != null && spot <= lower + EPS
-      const improved = upper != null && spot >= upper - EPS
-      addBarrier(lower, 'trigger', 'Leverage knock-in', true, geared)
-      addBarrier(upper, 'trigger2', 'Improver barrier', false, improved)
-      if (geared) {
-        status = 'geared'
-        obligationUSD = t.maxObligation || t.protection * 2
-        effectiveRate = strike
-      } else if (improved) {
-        status = 'improved'
-        obligationUSD = t.protection
-        effectiveRate = strike
-      } else {
-        status = 'protected'
-        obligationUSD = t.protection
-        effectiveRate = strike
-      }
-      break
+  } else if (fam === 'TARF') {
+    if (favourable) {
+      status = t.leveraged ? 'geared' : 'capped'
+      obligationUSD = t.leveraged ? t.maxObligation || t.protection * 2 : t.protection
+    } else {
+      status = 'protected'
+      obligationUSD = t.protection
     }
-
-    case 'TARF': {
-      const geared = strike != null && spot <= strike + EPS && t.leveraged
-      addBarrier(t.trigger ?? null, 'trigger', 'Target / barrier', false, t.trigger != null && spot <= t.trigger + EPS)
-      if (geared) {
-        status = 'geared'
-        obligationUSD = t.maxObligation || t.protection * 2
-      } else {
-        status = 'protected'
-        obligationUSD = t.protection
-      }
+    effectiveRate = strike
+  } else if (cls === 'Participate' || fam === 'Knock-In' || fam === 'Knock-In Improver') {
+    // Knock-in family: participate up to the knock-in unless a bad trigger hits.
+    if (badHit) {
+      status = 'obligated' // knock-in hit → participation lost, obligated at protection
+      obligationUSD = t.protection
       effectiveRate = strike
-      break
+    } else if (favourable) {
+      status = beyondCap ? 'capped' : 'participating'
+      effectiveRate = beyondCap ? participation : spot
+      obligationUSD = t.protection
+    } else {
+      status = 'protected'
+      obligationUSD = t.protection
+      effectiveRate = strike
     }
-
-    default:
+  } else {
+    // Protect family with participation (Collar / Participator / Vanilla).
+    if (favourable) {
+      status = beyondCap ? 'capped' : 'participating'
+      effectiveRate = beyondCap ? participation : spot
+      obligationUSD = t.protection
+    } else {
       status = t.protection > 0 ? 'protected' : 'inactive'
       obligationUSD = t.protection
       effectiveRate = strike
-      if (t.trigger != null) addBarrier(t.trigger, 'trigger', 'Barrier', t.leveraged, spot <= t.trigger + EPS)
+    }
   }
 
-  const adverse = status === 'geared' || status === 'knocked-out'
+  const adverse = status === 'geared' || status === 'knocked-out' || status === 'obligated'
 
   // AUD conversion. AUD/USD is USD-per-AUD, so AUD = USD / rate.
   const hedgedAUD = effectiveRate ? obligationUSD / effectiveRate : obligationUSD / spot

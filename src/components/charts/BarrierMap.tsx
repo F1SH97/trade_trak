@@ -129,10 +129,10 @@ export function BarrierMap({
       </svg>
       <div className="mt-1 flex items-center gap-4 px-1 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS.critical }} /> Adverse barrier
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS.critical }} /> Bad trigger
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS.good }} /> Upside / benign
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATUS.good }} /> Good / benign trigger
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full border-2" style={{ borderColor: t.axis }} /> Not yet breached

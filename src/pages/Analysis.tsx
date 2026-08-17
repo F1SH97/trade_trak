@@ -29,6 +29,9 @@ const OBSERVATIONS: { key: Observation; label: string; hint: string }[] = [
 const statusTone: Record<ScenarioStatus, { bg: string; label: string }> = {
   committed: { bg: STATUS.warning, label: 'Committed' },
   protected: { bg: STATUS.good, label: 'Protected' },
+  participating: { bg: STATUS.good, label: 'Participating' },
+  capped: { bg: STATUS.warning, label: 'Capped at rate' },
+  obligated: { bg: STATUS.critical, label: 'Obligated at protection' },
   geared: { bg: STATUS.critical, label: 'Leveraged up' },
   'knocked-out': { bg: STATUS.critical, label: 'Knocked out' },
   improved: { bg: STATUS.good, label: 'Improved' },
@@ -229,10 +232,10 @@ export function Analysis() {
       <Card className="border-dashed">
         <CardHeader title="Model assumptions" subtitle="How these scenarios are computed" />
         <ul className="list-inside list-disc space-y-1 text-xs text-ink-soft">
-          <li>Forwards / FECs are unconditional and transact at the protection strike.</li>
-          <li>Knock-outs lose protection if spot trades through the barrier; the notional is then shown as exposed.</li>
-          <li>Leveraged knock-ins leverage the obligation to the max when the lower barrier breaks; the upper barrier is treated as an improver (a positive).</li>
-          <li>TARFs leverage below the strike; target-accrual redemption is not path-simulated.</li>
+          <li>Products follow the Convera Rules of Barriers: on an <strong>LHS</strong> trade a higher spot is favourable (RHS: lower). Triggers are read relative to the protection rate.</li>
+          <li><strong>Knock-ins</strong> on the favourable side are bad triggers — if reached, participation is lost and you transact at the protection rate. Inverted knock-ins obligate at the enhanced rate instead.</li>
+          <li><strong>Knock-outs</strong> lose cover if breached (shown as exposed); convertible knock-outs are good triggers — the structure becomes a vanilla with full protection and upside.</li>
+          <li>Enhanced / leveraged products (knock-outs, TARFs) gear the obligation to the max on a favourable move; TARF target-accrual redemption is not path-simulated.</li>
           <li>AUD figures convert USD at <code className="rounded bg-surface-sunken px-1">AUD = USD ÷ rate</code>. This is a first-order intuition tool, not a settlement or valuation model.</li>
         </ul>
       </Card>
