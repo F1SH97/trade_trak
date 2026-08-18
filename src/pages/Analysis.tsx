@@ -9,8 +9,6 @@ import {
   impliedSpot,
   rateCurve,
   spotBounds,
-  type Observation,
-  type Perspective,
   type PortfolioScenario,
   type ScenarioStatus,
   type TradeScenario,
@@ -25,12 +23,6 @@ import { TarfProgressBar } from '../components/TarfProgress'
 import { RatePayoffChart } from '../components/charts/RatePayoffChart'
 import { BarrierMap } from '../components/charts/BarrierMap'
 import { STATUS, categorical } from '../theme'
-
-const OBSERVATIONS: { key: Observation; label: string; hint: string }[] = [
-  { key: 'expiry', label: 'At expiry', hint: 'Barriers assessed only on the expiry date (European style).' },
-  { key: 'window', label: 'During a window', hint: 'Barriers can trigger any time inside the observation window.' },
-  { key: 'duration', label: 'Through duration', hint: 'Barriers live for the whole life of the trade (continuous).' },
-]
 
 const statusTone: Record<ScenarioStatus, { bg: string; label: string }> = {
   committed: { bg: STATUS.warning, label: 'Committed' },
@@ -105,23 +97,63 @@ function SingleBookView({
   const implied = useMemo(() => impliedSpot(book), [book])
 
   const [spot, setSpot] = useState<number>(() => implied)
-  const [perspective, setPerspective] = useState<Perspective>('sellUSD')
-  const [observation, setObservation] = useState<Observation>('expiry')
 
   const scenario = useMemo(
     // Show every expiry in a strip (including past ones); otherwise only live trades.
-    () => evaluatePortfolio(book, spot, perspective, observation, !stripActive),
-    [book, spot, perspective, observation, stripActive],
+    () => evaluatePortfolio(book, spot, 'sellUSD', 'expiry', !stripActive),
+    [book, spot, stripActive],
   )
-  const curve = useMemo(
-    () => rateCurve(book, perspective, { ...bounds, steps: 70 }),
-    [book, perspective, bounds],
-  )
+  const curve = useMemo(() => rateCurve(book, 'sellUSD', { ...bounds, steps: 70 }), [book, bounds])
 
   const palette = categorical(mode)
   const barrierLines = uniqueBarriers(scenario.rows)
   const leveraged = book.trades.some((t) => t.leveraged)
+  const ccy = scenario.foreignCcy
   const move = (implied ? (spot - implied) / implied : 0) * 100
+  const protectionUSD = book.trades.reduce((s, t) => s + t.protection, 0)
+  const maxUSD = book.trades.reduce((s, t) => s + t.maxObligation, 0)
+  const nextExp = nextExpiryOf(book.trades)
+
+  const sliderCard = (
+    <Card>
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Scenario spot · {book.pair}</span>
+        <span className="text-[11px] text-ink-muted">
+          implied {rate(implied)} ·{' '}
+          <span className={move >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>
+            {move >= 0 ? '+' : ''}
+            {move.toFixed(1)}%
+          </span>
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="tnum text-3xl font-semibold tracking-tight text-ink">{rate(spot)}</span>
+        <div className="flex flex-col gap-1">
+          <button className="rounded border border-line px-2 text-xs text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot((s) => Number((s + 0.0025).toFixed(4)))}>+</button>
+          <button className="rounded border border-line px-2 text-xs text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot((s) => Number((s - 0.0025).toFixed(4)))}>−</button>
+        </div>
+        <button className="ml-auto rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot(implied)}>
+          Reset to implied
+        </button>
+      </div>
+      <input
+        type="range"
+        min={bounds.min}
+        max={bounds.max}
+        step={0.0005}
+        value={spot}
+        onChange={(e) => setSpot(Number(e.target.value))}
+        className="mt-3 w-full accent-brand-600"
+        style={{ accentColor: palette[0] }}
+      />
+      <div className="mt-1 flex justify-between text-[10px] text-ink-muted">
+        <span>{rate(bounds.min)}</span>
+        <span className="text-red-500">stronger obligation ◄</span>
+        <span className="text-emerald-600 dark:text-emerald-400">► more upside</span>
+        <span>{rate(bounds.max)}</span>
+      </div>
+    </Card>
+  )
 
   return (
     <div className="animate-fade space-y-5">
@@ -146,99 +178,13 @@ function SingleBookView({
         </div>
       )}
 
-      {/* Controls */}
-      <Card>
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.6fr_1fr]">
-          {/* Spot slider */}
-          <div>
-            <div className="mb-2 flex items-baseline justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                Scenario spot · {book.pair}
-              </span>
-              <span className="text-[11px] text-ink-muted">
-                implied {rate(implied)} · <span className={move >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}>{move >= 0 ? '+' : ''}{move.toFixed(1)}%</span>
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="tnum text-3xl font-semibold tracking-tight text-ink">{rate(spot)}</span>
-              <div className="flex flex-col gap-1">
-                <button className="rounded border border-line px-2 text-xs text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot((s) => Number((s + 0.0025).toFixed(4)))}>+</button>
-                <button className="rounded border border-line px-2 text-xs text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot((s) => Number((s - 0.0025).toFixed(4)))}>−</button>
-              </div>
-              <button className="ml-auto rounded-lg border border-line px-2.5 py-1 text-[11px] font-medium text-ink-soft hover:bg-surface-sunken" onClick={() => setSpot(implied)}>
-                Reset to implied
-              </button>
-            </div>
-            <input
-              type="range"
-              min={bounds.min}
-              max={bounds.max}
-              step={0.0005}
-              value={spot}
-              onChange={(e) => setSpot(Number(e.target.value))}
-              className="mt-3 w-full accent-brand-600"
-              style={{ accentColor: palette[0] }}
-            />
-            <div className="mt-1 flex justify-between text-[10px] text-ink-muted">
-              <span>{rate(bounds.min)}</span>
-              <span className="text-red-500">stronger obligation ◄</span>
-              <span className="text-emerald-600 dark:text-emerald-400">► more upside</span>
-              <span>{rate(bounds.max)}</span>
-            </div>
-          </div>
-
-          {/* Toggles */}
-          <div className="space-y-3">
-            <div>
-              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Your position</span>
-              <SegToggle
-                value={perspective}
-                onChange={(v) => setPerspective(v as Perspective)}
-                options={[
-                  { key: 'sellUSD', label: 'Selling USD' },
-                  { key: 'buyUSD', label: 'Buying USD' },
-                ]}
-              />
-            </div>
-            <div>
-              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ink-muted">Rate applies</span>
-              <SegToggle
-                value={observation}
-                onChange={(v) => setObservation(v as Observation)}
-                options={OBSERVATIONS.map((o) => ({ key: o.key, label: o.label }))}
-              />
-              <p className="mt-1 text-[11px] text-ink-muted">{OBSERVATIONS.find((o) => o.key === observation)?.hint}</p>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Scenario KPIs */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <KpiTile
-          label="Net structure value"
-          value={`${scenario.totalBenefitAUD >= 0 ? '+' : ''}${fxCompact(scenario.totalBenefitAUD, scenario.foreignCcy)}`}
-          sub={`${scenario.foreignCcy} vs a forward at protection`}
-          accent={scenario.totalBenefitAUD >= 0 ? STATUS.good : STATUS.critical}
-        />
-        <KpiTile
-          label="Total obligation"
-          value={fxCompact(scenario.totalObligationForeign, scenario.foreignCcy)}
-          sub={`${scenario.foreignCcy} · ${usdCompact(scenario.totalObligationUSD)} USD`}
-          accent={palette[1]}
-        />
-        <KpiTile
-          label="Adverse hedges"
-          value={String(scenario.adverseCount)}
-          sub={`${scenario.rows.length} live trades`}
-          accent={scenario.adverseCount > 0 ? STATUS.serious : STATUS.good}
-        />
-        <KpiTile
-          label="Exposed notional"
-          value={usdCompact(scenario.totalExposedUSD)}
-          sub="USD with protection knocked out"
-          accent={scenario.totalExposedUSD > 0 ? STATUS.critical : STATUS.good}
-        />
+      {/* Book facts — same tiles as the per-pair view */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <KpiTile label="Protection" value={fxCompact(protectionUSD / implied, ccy)} sub={`${usdCompact(protectionUSD)} USD`} accent={palette[0]} />
+        <KpiTile label="Max obligation" value={fxCompact(maxUSD / implied, ccy)} sub={`${usdCompact(maxUSD)} USD worst case`} accent={palette[1]} />
+        <KpiTile label="Avg protection rate" value={rate(implied)} sub="notional-weighted" accent={palette[3]} />
+        <KpiTile label="Next expiry" value={nextExp ? fmtDay(nextExp) : '—'} sub={nextExp ? relativeDays(nextExp) : ''} accent={palette[5]} />
+        <KpiTile label="Trades" value={String(scenario.rows.length)} sub={scenario.rows.length === 1 ? 'hedge' : 'hedges'} accent={palette[6]} />
       </div>
 
       {/* Payoff */}
@@ -249,6 +195,9 @@ function SingleBookView({
         />
         <RatePayoffChart data={curve} spot={spot} protection={[implied]} barriers={barrierLines} mode={mode} leveraged={leveraged} />
       </Card>
+
+      {/* Spot slider — between the payoff and the barrier map */}
+      {sliderCard}
 
       <TarfPanel rows={scenario.rows} />
 
@@ -264,7 +213,7 @@ function SingleBookView({
       <Card>
         <CardHeader
           title="Per-hedge outcome at this spot"
-          subtitle={`Evaluated at ${rate(spot)} · ${perspective === 'sellUSD' ? 'selling USD' : 'buying USD'}`}
+          subtitle={`Evaluated at ${rate(spot)} · selling USD`}
         />
         <ScenarioTable rows={scenario.rows} ccy={scenario.foreignCcy} />
       </Card>
@@ -531,30 +480,13 @@ function AssumptionsCard({ ccy }: { ccy: string | null }) {
   )
 }
 
-function SegToggle({
-  value,
-  onChange,
-  options,
-}: {
-  value: string
-  onChange: (v: string) => void
-  options: { key: string; label: string }[]
-}) {
-  return (
-    <div className="inline-flex w-full rounded-lg border border-line bg-surface-sunken p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.key}
-          onClick={() => onChange(o.key)}
-          className={`flex-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
-            value === o.key ? 'bg-surface text-ink shadow-card' : 'text-ink-muted hover:text-ink-soft'
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
+/** The soonest upcoming expiry (falls back to the earliest when all are past). */
+function nextExpiryOf(trades: Trade[]): Date | null {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const upcoming = trades.filter((t) => t.expiry >= now).map((t) => t.expiry)
+  const pool = upcoming.length ? upcoming : trades.map((t) => t.expiry)
+  return pool.length ? pool.reduce((m, d) => (d < m ? d : m)) : null
 }
 
 function ScenarioTable({ rows, ccy }: { rows: TradeScenario[]; ccy: string }) {
