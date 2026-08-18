@@ -6,7 +6,7 @@ import { tradesInStrip } from '../lib/analytics'
 import {
   evaluatePortfolio,
   impliedSpot,
-  payoffCurve,
+  rateCurve,
   spotBounds,
   type Observation,
   type Perspective,
@@ -16,10 +16,12 @@ import {
 } from '../lib/scenario'
 import type { Portfolio, Trade } from '../lib/types'
 import type { Mode } from '../theme'
+import { parseTarfProgress } from '../lib/tarf'
 import { fmtDay, fxCompact, rate, usd, usdCompact } from '../lib/format'
 import { Card, CardHeader, Empty, Badge } from '../components/ui'
 import { KpiTile } from '../components/KpiTile'
-import { PayoffChart } from '../components/charts/PayoffChart'
+import { TarfProgressBar } from '../components/TarfProgress'
+import { RatePayoffChart } from '../components/charts/RatePayoffChart'
 import { BarrierMap } from '../components/charts/BarrierMap'
 import { STATUS, categorical } from '../theme'
 
@@ -111,12 +113,14 @@ function SingleBookView({
     [book, spot, perspective, observation, stripActive],
   )
   const curve = useMemo(
-    () => payoffCurve(book, perspective, { ...bounds, steps: 70 }),
+    () => rateCurve(book, perspective, { ...bounds, steps: 70 }),
     [book, perspective, bounds],
   )
 
   const palette = categorical(mode)
   const barrierLines = uniqueBarriers(scenario.rows)
+  const protectionLines = protectionLevels(scenario.rows)
+  const leveraged = book.trades.some((t) => t.leveraged)
   const move = (implied ? (spot - implied) / implied : 0) * 100
 
   return (
@@ -241,10 +245,12 @@ function SingleBookView({
       <Card>
         <CardHeader
           title="Portfolio payoff across the market"
-          subtitle={`Structure value (${scenario.foreignCcy}) vs a forward at protection — dashed lines mark barriers, solid line the scenario spot`}
+          subtitle="Your effective rate vs the market — the gap is what the structure is worth; dashed lines mark barriers and the protection rate"
         />
-        <PayoffChart data={curve} spot={spot} barriers={barrierLines} mode={mode} ccy={scenario.foreignCcy} />
+        <RatePayoffChart data={curve} spot={spot} protection={protectionLines} barriers={barrierLines} mode={mode} leveraged={leveraged} />
       </Card>
+
+      <TarfPanel rows={scenario.rows} />
 
       {/* Barrier map */}
       <Card>
@@ -380,8 +386,10 @@ function PairCard({
   const palette = categorical(mode)
   const bounds = useMemo(() => spotBounds(sub), [sub])
   const implied = useMemo(() => impliedSpot(sub), [sub])
-  const curve = useMemo(() => payoffCurve(sub, 'sellUSD', { ...bounds, steps: 70 }), [sub, bounds])
+  const curve = useMemo(() => rateCurve(sub, 'sellUSD', { ...bounds, steps: 70 }), [sub, bounds])
   const barrierLines = uniqueBarriers(scenario.rows)
+  const protectionLines = protectionLevels(scenario.rows)
+  const leveraged = sub.trades.some((t) => t.leveraged)
   const ccy = scenario.foreignCcy
   const [base, quote] = splitPair(sub.pair)
   const net = scenario.totalBenefitAUD
@@ -439,9 +447,9 @@ function PairCard({
 
         {/* Mini payoff */}
         <p className="mb-1 mt-4 text-[11px] font-medium text-ink-soft">
-          Portfolio payoff — structure value ({ccy}) across {sub.pair}
+          Effective rate vs market — {sub.pair}
         </p>
-        <PayoffChart data={curve} spot={spot} barriers={barrierLines} mode={mode} ccy={ccy} heightClass="h-52" />
+        <RatePayoffChart data={curve} spot={spot} protection={protectionLines} barriers={barrierLines} mode={mode} leveraged={leveraged} heightClass="h-52" />
 
         {/* Per-pair spot slider (no position / rate toggles) */}
         <div className="mt-2">
@@ -479,6 +487,7 @@ function PairCard({
               <p className="mb-1 text-[11px] text-ink-muted">Protection rate and every barrier on {sub.pair}</p>
               <BarrierMap scenarios={scenario.rows} spot={spot} mode={mode} />
             </div>
+            <TarfPanel rows={scenario.rows} bare />
             <div>
               <h4 className="text-sm font-semibold text-ink">Per-hedge outcome at this spot</h4>
               <p className="mb-1 text-[11px] text-ink-muted">Evaluated at {rate(spot)} · selling USD</p>
@@ -512,7 +521,7 @@ function AssumptionsCard({ ccy }: { ccy: string | null }) {
         <li><strong>Knock-ins</strong> on the favourable side are bad triggers — if reached, participation is lost and you transact at the protection rate. Inverted knock-ins obligate at the enhanced rate instead.</li>
         <li><strong>Knock-outs</strong> lose cover if breached (shown as exposed); convertible knock-outs are good triggers — the structure becomes a vanilla with full protection and upside.</li>
         <li>Enhanced / leveraged products (knock-outs, TARFs) gear the obligation to the max on a favourable move; TARF target-accrual redemption is not path-simulated.</li>
-        <li><strong>Structure value</strong> is measured against a plain forward at the protection rate: transacting at protection is the zero line, so a knock-in improver draws a shark-fin (value falls back to zero when it knocks in) and a collar plateaus at its participation cap.</li>
+        <li>The <strong>payoff chart</strong> plots your effective transacted rate against the market (unhedged) rate — a forward is a flat locked line, a TARF locks then gears, and a knock-in improver tracks the market between its knock-ins then drops back to protection. The <strong>Net structure value</strong> KPI scores that rate against a plain forward at protection (zero when you transact at protection).</li>
         <li>
           Foreign-currency figures convert USD at{' '}
           <code className="rounded bg-surface-sunken px-1">{ccy ? `${ccy} = USD ÷ rate` : 'each pair’s currency = USD ÷ rate'}</code>. This is a
@@ -573,6 +582,14 @@ function ScenarioTable({ rows, ccy }: { rows: TradeScenario[]; ccy: string }) {
                 <td className="whitespace-nowrap px-3 py-2 font-medium text-ink">{fmtDay(r.trade.expiry)}</td>
                 <td className="px-3 py-2">
                   <Badge tone="neutral">{r.trade.family}</Badge>
+                  {(() => {
+                    const prog = parseTarfProgress(r.trade.comment)
+                    return prog ? (
+                      <div className="mt-0.5 whitespace-nowrap text-[10px] text-ink-muted">
+                        {Number.isInteger(prog.remaining) ? prog.remaining : prog.remaining.toFixed(1)} {prog.label.toLowerCase()} left · {Math.round(prog.fraction * 100)}% to target
+                      </div>
+                    ) : null
+                  })()}
                 </td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center gap-1.5 font-medium text-ink">
@@ -615,6 +632,53 @@ function uniqueBarriers(rows: TradeScenario[]): { level: number; adverse: boolea
     }
   }
   return [...map.values()]
+}
+
+/** Distinct protection strikes in the row set — reference lines for the payoff. */
+function protectionLevels(rows: TradeScenario[]): number[] {
+  const set = new Set<number>()
+  for (const r of rows) if (r.trade.protectionStrike != null) set.add(Number(r.trade.protectionStrike.toFixed(4)))
+  return [...set]
+}
+
+/** Target-accrual readouts for any TARF rows whose notes carry a points/count
+ *  balance. Hidden entirely when the book has none. `bare` drops the Card frame
+ *  for embedding inside an already-framed section (a pair card's detail). */
+function TarfPanel({ rows, bare = false }: { rows: TradeScenario[]; bare?: boolean }) {
+  const items = rows
+    .map((r) => ({ r, prog: parseTarfProgress(r.trade.comment) }))
+    .filter((x): x is { r: TradeScenario; prog: NonNullable<ReturnType<typeof parseTarfProgress>> } => x.prog != null)
+  if (!items.length) return null
+
+  const body = (
+    <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+      {items.map(({ r, prog }) => (
+        <div key={r.trade.id} className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-ink">{fmtDay(r.trade.expiry)}</div>
+            <div className="truncate text-[11px] text-ink-muted">{r.trade.family}</div>
+          </div>
+          <TarfProgressBar p={prog} />
+        </div>
+      ))}
+    </div>
+  )
+
+  if (bare) {
+    return (
+      <div>
+        <h4 className="text-sm font-semibold text-ink">TARF target accrual</h4>
+        <p className="mb-2 text-[11px] text-ink-muted">Points / counts remaining before the target knocks the structure out</p>
+        {body}
+      </div>
+    )
+  }
+  return (
+    <Card>
+      <CardHeader title="TARF target accrual" subtitle="Points / counts remaining before the target knocks the structure out" />
+      {body}
+    </Card>
+  )
 }
 
 /* ---- multi-pair helpers ---- */

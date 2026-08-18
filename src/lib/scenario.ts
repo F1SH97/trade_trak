@@ -294,6 +294,58 @@ export function payoffCurve(
   return out
 }
 
+export interface RatePoint {
+  spot: number
+  /** Where the market is — the unhedged rate (identity line). */
+  market: number
+  /** Notional-weighted rate the book actually transacts at, at this spot. */
+  effective: number
+  /** True when any hedge is geared up (leveraged) at this spot. */
+  leveraged: boolean
+}
+
+/**
+ * Sample the book's *effective transacted rate* against the market across a spot
+ * range. Unlike {@link payoffCurve} (value vs a forward at protection, which is
+ * flat for forwards and TARFs), this always has shape: a forward reads as a
+ * locked horizontal line, a knock-in improver tracks the market then drops to
+ * protection, a collar tracks between floor and cap. The gap to the market
+ * diagonal is what the structure is worth at that rate.
+ */
+export function rateCurve(
+  p: Portfolio,
+  perspective: Perspective,
+  range: { min: number; max: number; steps?: number },
+): RatePoint[] {
+  const steps = range.steps ?? 60
+  const out: RatePoint[] = []
+  for (let i = 0; i <= steps; i++) {
+    const spot = range.min + ((range.max - range.min) * i) / steps
+    const s = evaluatePortfolio(p, spot, perspective, 'expiry')
+    let wsum = 0
+    let w = 0
+    let leveraged = false
+    for (const r of s.rows) {
+      // Knocked-out cover leaves the client at the market; everything else has an
+      // effective rate. Weight by the notional actually transacting at that rate.
+      const rt = r.effectiveRate ?? spot
+      const notional = r.obligationUSD > 0 ? r.obligationUSD : r.exposedUSD > 0 ? r.exposedUSD : r.trade.protection
+      if (notional > 0) {
+        wsum += rt * notional
+        w += notional
+      }
+      if (r.status === 'geared') leveraged = true
+    }
+    out.push({
+      spot: Number(spot.toFixed(4)),
+      market: Number(spot.toFixed(4)),
+      effective: Number((w ? wsum / w : spot).toFixed(4)),
+      leveraged,
+    })
+  }
+  return out
+}
+
 /** A sensible default spot: the protection-weighted average strike of the book. */
 export function impliedSpot(p: Portfolio): number {
   let num = 0

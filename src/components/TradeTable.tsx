@@ -4,8 +4,23 @@ import type { Trade } from '../lib/types'
 import { fmtDay, rate, relativeDays, usd } from '../lib/format'
 import { stripKeyOf } from '../lib/analytics'
 import { CATEGORY_LABEL } from '../lib/products'
+import { parseTarfProgress, cleanNote } from '../lib/tarf'
+import { TarfProgressBar } from './TarfProgress'
 import { categoryColor } from '../theme'
 import { startOfDay } from '../lib/format'
+
+/** True when the trade carries any observation-window dates. */
+function hasWindow(t: Trade): boolean {
+  return !!(t.windowStart || t.windowEnd || t.window2Start || t.window2End)
+}
+
+/** Compact "open – close" text for one observation window. */
+function windowSpan(start: Date | null, end: Date | null, length: string | null): string | null {
+  if (start && end) return `${fmtDay(start)} – ${fmtDay(end)}`
+  if (start) return `from ${fmtDay(start)}`
+  if (end) return `to ${fmtDay(end)}`
+  return length || null
+}
 
 type SortKey = 'expiry' | 'protection' | 'maxObligation' | 'credit'
 
@@ -44,6 +59,10 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
     return [...trades].sort((a, b) => (val(a) - val(b)) * dir)
   }, [trades, sort, dir])
 
+  // Only surface the window / notes columns when the book actually carries them.
+  const showWindow = useMemo(() => trades.some(hasWindow), [trades])
+  const showNotes = useMemo(() => trades.some((t) => !!cleanNote(t.comment) || !!parseTarfProgress(t.comment)), [trades])
+
   const th = (key: SortKey, label: string, align = 'right') => (
     <th
       className={`cursor-pointer select-none whitespace-nowrap px-3 py-2 text-${align} font-semibold text-ink-soft hover:text-ink`}
@@ -72,8 +91,10 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
             <th className="px-3 py-2 text-right font-semibold text-ink-soft">Strike</th>
             <th className="px-3 py-2 text-right font-semibold text-ink-soft">Low Trigger</th>
             <th className="px-3 py-2 text-right font-semibold text-ink-soft">High Trigger</th>
+            {showWindow && <th className="px-3 py-2 text-left font-semibold text-ink-soft">Window</th>}
             {th('maxObligation', 'Max oblig.')}
             {th('credit', 'Credit')}
+            {showNotes && <th className="px-3 py-2 text-left font-semibold text-ink-soft">Notes</th>}
           </tr>
         </thead>
         <tbody>
@@ -118,8 +139,41 @@ export function TradeTable({ trades, dense = false }: { trades: Trade[]; dense?:
                     </>
                   )
                 })()}
+                {showWindow &&
+                  (() => {
+                    const w1 = windowSpan(t.windowStart, t.windowEnd, t.windowLength)
+                    const w2 = windowSpan(t.window2Start, t.window2End, t.window2Length)
+                    return (
+                      <td className="whitespace-nowrap px-3 py-2 text-[11px] text-ink-soft">
+                        {w1 ? (
+                          <>
+                            <div>{w1}</div>
+                            {w2 && <div className="text-ink-muted">{w2}</div>}
+                          </>
+                        ) : (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </td>
+                    )
+                  })()}
                 <td className="tnum whitespace-nowrap px-3 py-2 text-right text-ink-soft">{usd(t.maxObligation)}</td>
                 <td className="tnum whitespace-nowrap px-3 py-2 text-right text-ink-soft">{usd(t.credit)}</td>
+                {showNotes &&
+                  (() => {
+                    const prog = parseTarfProgress(t.comment)
+                    const note = cleanNote(t.comment)
+                    return (
+                      <td className="px-3 py-2 align-top">
+                        {prog ? (
+                          <TarfProgressBar p={prog} />
+                        ) : note ? (
+                          <span className="block max-w-[220px] text-[11px] leading-snug text-ink-soft">{note}</span>
+                        ) : (
+                          <span className="text-ink-muted">—</span>
+                        )}
+                      </td>
+                    )
+                  })()}
               </tr>
             )
           })}
