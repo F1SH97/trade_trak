@@ -17,7 +17,7 @@ import {
 import type { Portfolio, Trade } from '../lib/types'
 import type { Mode } from '../theme'
 import { parseTarfProgress } from '../lib/tarf'
-import { fmtDay, fxCompact, rate, usd, usdCompact } from '../lib/format'
+import { fmtDay, fxCompact, rate, relativeDays, usd, usdCompact } from '../lib/format'
 import { Card, CardHeader, Empty, Badge } from '../components/ui'
 import { KpiTile } from '../components/KpiTile'
 import { TarfProgressBar } from '../components/TarfProgress'
@@ -432,18 +432,21 @@ function PairCard({
       </button>
 
       <div className="px-4 pb-4">
-        {/* Per-pair tiles (in the hedge currency) */}
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
-          <MiniStat label="Obligation" value={fxCompact(scenario.totalObligationForeign, ccy)} sub={`${usdCompact(scenario.totalObligationUSD)} USD`} />
-          <MiniStat
-            label="Structure value"
-            value={`${net >= 0 ? '+' : ''}${fxCompact(net, ccy)}`}
-            sub="vs forward at protection"
-            tone={net >= 0 ? STATUS.good : STATUS.critical}
-          />
-          <MiniStat label="Adverse" value={String(scenario.adverseCount)} sub={`of ${scenario.rows.length} hedges`} />
-          <MiniStat label="Exposed" value={usdCompact(scenario.totalExposedUSD)} sub="protection lost" />
-        </div>
+        {/* Per-pair tiles — stable book facts (in the hedge currency). Kept
+            identical across every pair so the cards read the same. */}
+        {(() => {
+          const protectionUSD = sub.trades.reduce((s, t) => s + t.protection, 0)
+          const maxUSD = sub.trades.reduce((s, t) => s + t.maxObligation, 0)
+          const nextExp = sub.trades.reduce<Date | null>((m, t) => (m == null || t.expiry < m ? t.expiry : m), null)
+          return (
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              <MiniStat label="Protection" value={fxCompact(protectionUSD / implied, ccy)} sub={`${usdCompact(protectionUSD)} USD`} />
+              <MiniStat label="Max obligation" value={fxCompact(maxUSD / implied, ccy)} sub={`${usdCompact(maxUSD)} USD`} />
+              <MiniStat label="Next expiry" value={nextExp ? fmtDay(nextExp) : '—'} sub={nextExp ? relativeDays(nextExp) : ''} />
+              <MiniStat label="Trades" value={String(sub.trades.length)} sub={`live ${sub.trades.length === 1 ? 'hedge' : 'hedges'}`} />
+            </div>
+          )
+        })()}
 
         {/* Mini payoff */}
         <p className="mb-1 mt-4 text-[11px] font-medium text-ink-soft">
