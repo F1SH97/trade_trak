@@ -120,7 +120,6 @@ function SingleBookView({
 
   const palette = categorical(mode)
   const barrierLines = uniqueBarriers(scenario.rows)
-  const protectionLines = protectionLevels(scenario.rows)
   const leveraged = book.trades.some((t) => t.leveraged)
   const move = (implied ? (spot - implied) / implied : 0) * 100
 
@@ -248,7 +247,7 @@ function SingleBookView({
           title="Portfolio payoff across the market"
           subtitle="Your effective rate vs the market — the gap is what the structure is worth; dashed lines mark barriers and the protection rate"
         />
-        <RatePayoffChart data={curve} spot={spot} protection={protectionLines} barriers={barrierLines} mode={mode} leveraged={leveraged} />
+        <RatePayoffChart data={curve} spot={spot} protection={[implied]} barriers={barrierLines} mode={mode} leveraged={leveraged} />
       </Card>
 
       <TarfPanel rows={scenario.rows} />
@@ -385,7 +384,6 @@ function PairCard({
   const implied = useMemo(() => impliedSpot(sub), [sub])
   const curve = useMemo(() => rateCurve(sub, 'sellUSD', { ...bounds, steps: 70 }), [sub, bounds])
   const barrierLines = uniqueBarriers(scenario.rows)
-  const protectionLines = protectionLevels(scenario.rows)
   const leveraged = sub.trades.some((t) => t.leveraged)
   const ccy = scenario.foreignCcy
   const [base, quote] = splitPair(sub.pair)
@@ -436,9 +434,10 @@ function PairCard({
           const maxUSD = sub.trades.reduce((s, t) => s + t.maxObligation, 0)
           const nextExp = sub.trades.reduce<Date | null>((m, t) => (m == null || t.expiry < m ? t.expiry : m), null)
           return (
-            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
               <MiniStat label="Protection" value={fxCompact(protectionUSD / implied, ccy)} sub={`${usdCompact(protectionUSD)} USD`} />
               <MiniStat label="Max obligation" value={fxCompact(maxUSD / implied, ccy)} sub={`${usdCompact(maxUSD)} USD`} />
+              <MiniStat label="Avg protection rate" value={rate(implied)} sub="notional-weighted" />
               <MiniStat label="Next expiry" value={nextExp ? fmtDay(nextExp) : '—'} sub={nextExp ? relativeDays(nextExp) : ''} />
               <MiniStat label="Trades" value={String(sub.trades.length)} sub={`live ${sub.trades.length === 1 ? 'hedge' : 'hedges'}`} />
             </div>
@@ -449,7 +448,7 @@ function PairCard({
         <p className="mb-1 mt-4 text-[11px] font-medium text-ink-soft">
           Effective rate vs market — {sub.pair}
         </p>
-        <RatePayoffChart data={curve} spot={spot} protection={protectionLines} barriers={barrierLines} mode={mode} leveraged={leveraged} heightClass="h-52" />
+        <RatePayoffChart data={curve} spot={spot} protection={[implied]} barriers={barrierLines} mode={mode} leveraged={leveraged} heightClass="h-52" />
 
         {/* Per-pair spot slider (no position / rate toggles) */}
         <div className="mt-2">
@@ -632,13 +631,6 @@ function uniqueBarriers(rows: TradeScenario[]): { level: number; adverse: boolea
     }
   }
   return [...map.values()]
-}
-
-/** Distinct protection strikes in the row set — reference lines for the payoff. */
-function protectionLevels(rows: TradeScenario[]): number[] {
-  const set = new Set<number>()
-  for (const r of rows) if (r.trade.protectionStrike != null) set.add(Number(r.trade.protectionStrike.toFixed(4)))
-  return [...set]
 }
 
 /** Target-accrual readouts for any TARF rows whose notes carry a points/count

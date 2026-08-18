@@ -71,7 +71,7 @@ export function RatePayoffChart({
           Market (unhedged)
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-4 rounded" style={{ background: STATUS.warning }} /> Protection rate
+          <span className="inline-block h-0.5 w-4 rounded" style={{ background: STATUS.warning }} /> Avg protection rate
         </span>
         {leveraged && <span className="font-medium text-amber-600 dark:text-amber-400">⚡ obligation gears up on a favourable move</span>}
       </div>
