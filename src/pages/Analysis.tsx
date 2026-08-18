@@ -5,6 +5,7 @@ import { useTheme } from '../lib/theme-context'
 import { tradesInStrip } from '../lib/analytics'
 import {
   evaluatePortfolio,
+  foreignCcyOf,
   impliedSpot,
   rateCurve,
   spotBounds,
@@ -299,55 +300,51 @@ function MultiPairView({ portfolio, groups }: { portfolio: Portfolio; groups: Pa
     [portfolio, groups, spots],
   )
 
-  const roll = useMemo(() => rollup(evaluated.map((e) => e.scenario)), [evaluated])
+  const roll = useMemo(() => rollup(evaluated.map((e) => e.sub)), [evaluated])
 
   return (
     <div className="animate-fade space-y-5">
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-ink">Analysis · Market scenarios</h1>
         <p className="mt-0.5 text-sm text-ink-soft">
-          Full book — <strong className="font-semibold text-ink">{groups.length} currency pairs</strong> · {roll.liveTrades} live trades. Each pair
+          Full book — <strong className="font-semibold text-ink">{groups.length} currency pairs</strong> · {roll.live} live trades. Each pair
           moves on its own spot; barriers and obligations stay in that pair&apos;s world.
         </p>
       </div>
 
-      {/* Portfolio roll-up */}
+      {/* Portfolio roll-up — the same book facts as the per-pair cards, aggregated. */}
       <div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiTile
-            label="Book obligation"
-            value={roll.commonBase ? fxCompact(roll.obligationForeign, roll.commonBase) : usdCompact(roll.obligationUSD)}
-            sub={roll.commonBase ? `${groups.length} pairs · ${usdCompact(roll.obligationUSD)} USD` : `${groups.length} pairs`}
+            label="Protection"
+            value={roll.commonBase ? fxCompact(roll.protectionForeign, roll.commonBase) : usdCompact(roll.protectionUSD)}
+            sub={`${groups.length} pairs · ${usdCompact(roll.protectionUSD)} USD`}
             accent={categorical(mode)[0]}
           />
           <KpiTile
-            label="Net structure value"
-            value={
-              roll.commonBase
-                ? `${roll.benefitForeign >= 0 ? '+' : ''}${fxCompact(roll.benefitForeign, roll.commonBase)}`
-                : `${roll.favourablePairs}/${groups.length}`
-            }
-            sub={roll.commonBase ? 'vs forwards at protection' : 'pairs net favourable'}
-            accent={roll.commonBase ? (roll.benefitForeign >= 0 ? STATUS.good : STATUS.critical) : STATUS.good}
+            label="Max obligation"
+            value={roll.commonBase ? fxCompact(roll.maxForeign, roll.commonBase) : usdCompact(roll.maxUSD)}
+            sub={`${usdCompact(roll.maxUSD)} USD worst case`}
+            accent={categorical(mode)[1]}
           />
           <KpiTile
-            label="Adverse hedges"
-            value={String(roll.adverse)}
-            sub={`of ${roll.liveTrades} live trades`}
-            accent={roll.adverse > 0 ? STATUS.serious : STATUS.good}
+            label="Next expiry"
+            value={roll.next ? fmtDay(roll.next) : '—'}
+            sub={roll.next ? relativeDays(roll.next) : ''}
+            accent={categorical(mode)[3]}
           />
           <KpiTile
-            label="Exposed notional"
-            value={usdCompact(roll.exposedUSD)}
-            sub="USD with protection knocked out"
-            accent={roll.exposedUSD > 0 ? STATUS.critical : STATUS.good}
+            label="Trades"
+            value={String(roll.live)}
+            sub={`live across ${groups.length} pairs`}
+            accent={categorical(mode)[5]}
           />
         </div>
-        <p className="mt-2 px-0.5 text-[11px] text-ink-muted">
-          {roll.commonBase
-            ? `Totals aggregate only because every pair shares the ${roll.commonBase} base leg. USD figures are always comparable.`
-            : 'Pairs span unrelated base currencies, so the book obligation is shown in USD and value is summarised as a count.'}
-        </p>
+        {roll.commonBase && (
+          <p className="mt-2 px-0.5 text-[11px] text-ink-muted">
+            Hedge-currency totals aggregate because every pair shares the {roll.commonBase} base leg; USD figures are always comparable.
+          </p>
+        )}
       </div>
 
       {/* Per-pair sections */}
@@ -723,18 +720,29 @@ function splitPair(pair: string): [string, string] {
   return [parts[0] ?? pair, parts[1] ?? '']
 }
 
-/** Aggregate the per-pair scenarios into the book-level roll-up strip. */
-function rollup(scenarios: PortfolioScenario[]) {
-  const bases = new Set(scenarios.map((s) => s.foreignCcy))
+/** Aggregate the per-pair books into the book-level roll-up strip — the same
+ *  stable facts the per-pair cards show. Foreign figures use each pair's own
+ *  protection-weighted rate, so the total is only meaningful when the pairs
+ *  share a base currency (commonBase). */
+function rollup(books: Portfolio[]) {
+  const bases = new Set(books.map((b) => foreignCcyOf(b.pair)))
   const commonBase = bases.size === 1 ? [...bases][0] : null
-  return {
-    commonBase,
-    obligationUSD: scenarios.reduce((s, x) => s + x.totalObligationUSD, 0),
-    obligationForeign: scenarios.reduce((s, x) => s + x.totalObligationForeign, 0),
-    benefitForeign: scenarios.reduce((s, x) => s + x.totalBenefitAUD, 0),
-    exposedUSD: scenarios.reduce((s, x) => s + x.totalExposedUSD, 0),
-    adverse: scenarios.reduce((s, x) => s + x.adverseCount, 0),
-    liveTrades: scenarios.reduce((s, x) => s + x.rows.length, 0),
-    favourablePairs: scenarios.filter((x) => x.totalBenefitAUD >= 0).length,
+  let protectionUSD = 0
+  let maxUSD = 0
+  let protectionForeign = 0
+  let maxForeign = 0
+  let live = 0
+  let next: Date | null = null
+  for (const b of books) {
+    const implied = impliedSpot(b) || 1
+    live += b.trades.length
+    for (const t of b.trades) {
+      protectionUSD += t.protection
+      maxUSD += t.maxObligation
+      protectionForeign += t.protection / implied
+      maxForeign += t.maxObligation / implied
+      if (next == null || t.expiry < next) next = t.expiry
+    }
   }
+  return { commonBase, protectionUSD, maxUSD, protectionForeign, maxForeign, live, next }
 }
