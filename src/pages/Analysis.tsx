@@ -37,7 +37,7 @@ const statusTone: Record<ScenarioStatus, { bg: string; label: string }> = {
   participating: { bg: STATUS.good, label: 'Participating' },
   capped: { bg: STATUS.warning, label: 'Capped at rate' },
   obligated: { bg: STATUS.critical, label: 'Obligated at protection' },
-  geared: { bg: STATUS.critical, label: 'Leveraged up' },
+  geared: { bg: STATUS.critical, label: 'Obligated at leveraged amount' },
   'knocked-out': { bg: STATUS.critical, label: 'Knocked out' },
   improved: { bg: STATUS.good, label: 'Improved' },
   inactive: { bg: '#94a3b8', label: 'Inactive' },

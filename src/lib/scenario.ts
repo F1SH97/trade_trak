@@ -92,7 +92,7 @@ function statusText(s: ScenarioStatus): string {
     case 'participating': return 'Participating'
     case 'capped': return 'Capped at rate'
     case 'obligated': return 'Obligated at protection'
-    case 'geared': return 'Leveraged up'
+    case 'geared': return 'Obligated at leveraged amount'
     case 'knocked-out': return 'Knocked out'
     case 'improved': return 'Improved'
     default: return 'Inactive'
